@@ -1,0 +1,55 @@
+name: GPT-5.6-SOL - modifica repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      richiesta:
+        description: "Scrivi cosa deve migliorare nell'app"
+        required: true
+        default: "Analizza il progetto Android e proponi un piccolo miglioramento sicuro."
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  codex:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica il repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Esegui Codex con GPT-5.6-SOL Azure
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ secrets.AZURE_OPENAI_RESPONSES_URL }}
+          model: ${{ secrets.AZURE_OPENAI_MODEL }}
+          prompt: |
+            Lavora nel repository già aperto.
+
+            Richiesta dell'utente:
+            ${{ inputs.richiesta }}
+
+            Regole obbligatorie:
+            - Analizza prima il progetto.
+            - Modifica solo i file necessari.
+            - Non eliminare funzionalità esistenti.
+            - Non inserire API key, password, token o secret nei file.
+            - Esegui il build o i test disponibili, se possibile.
+            - Riassumi modifiche e problemi trovati.
+
+      - name: Crea pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ai/gpt-56-sol
+          delete-branch: true
+          title: "AI: modifiche proposte da GPT-5.6-SOL"
+          body: |
+            Modifiche create automaticamente da Codex con GPT-5.6-SOL su Azure.
+            Controlla attentamente i file modificati prima del merge.
+          commit-message: "AI: modifiche proposte da GPT-5.6-SOL"
