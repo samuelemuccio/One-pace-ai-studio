@@ -1,0 +1,47 @@
+name: AI Agent con GPT-5.6-SOL (Azure Foundry)
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  ai-agent:
+    runs-on: ubuntu-latest
+
+    # Attiva solo su commenti nelle issue (non nelle PR) che contengono /ai
+    if: >
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '/ai')
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configura variabili ambiente per Azure OpenAI
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "OPENAI_BASE_URL=${{ secrets.AZURE_OPENAI_BASE_URL }}" >> $GITHUB_ENV
+          echo "OPENAI_MODEL=${{ secrets.AZURE_OPENAI_MODEL }}" >> $GITHUB_ENV
+
+      - name: Installa un agente OpenAI-compatible (es. Codex CLI)
+        run: |
+          # Se preferisci un altro agente, cambia questa riga
+          npm install -g @openai/codex
+
+      - name: Esegui agente sul repository
+        env:
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ env.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ env.OPENAI_MODEL }}
+        run: |
+          # Leggi il commento che ha attivato il workflow
+          COMMENT="${{ github.event.comment.body }}"
+
+          # Esegui l'agente con un prompt generico; puoi personalizzarlo
+          codex \
+            --prompt "Analizza questo repository APK. Proponi e implementa miglioramenti concreti su: struttura del progetto, naming, gestione errori e leggibilità del codice. Crea una pull request con tutte le modifiche necessarie." \
+            --repo .
