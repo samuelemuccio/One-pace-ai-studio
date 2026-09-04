@@ -153,6 +153,70 @@ class PlaybackPreferences(private val context: Context) {
         }
     }
 
+    fun isStreakReminderEnabled(): Boolean = prefs.getBoolean("streak_reminder_enabled", true)
+    fun setStreakReminderEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("streak_reminder_enabled", enabled).apply()
+    }
+
+    fun getPreferredDownloadQuality(): String = prefs.getString("download_quality", "720p") ?: "720p"
+    fun setPreferredDownloadQuality(quality: String) {
+        prefs.edit().putString("download_quality", quality).apply()
+    }
+
+    fun isAutoSkipIntroEnabled(): Boolean = prefs.getBoolean("auto_skip_intro", true)
+    fun setAutoSkipIntroEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_skip_intro", enabled).apply()
+    }
+
+    fun sendStreakWarningNotification(currentEp: Int, streakDays: Int) {
+        if (!isStreakReminderEnabled()) return
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 0, intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("⚠️ La tua serie pirata sta per scadere!")
+                .setContentText("Hai una streak di $streakDays giorni! Guarda l'Episodio $currentEp prima di mezzanotte 🔥")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID + 1, builder.build())
+        } catch (_: Exception) {
+        }
+    }
+
+    fun sendTestNotification(streakDays: Int, currentEp: Int) {
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 0, intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("🔥 Promemoria Serie Pirata (Attivo!)")
+                .setContentText("Streak attiva: $streakDays giorni consecutivi! Pronto per l'Episodio $currentEp 🏴‍☠️")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID + 2, builder.build())
+        } catch (_: Exception) {
+        }
+    }
+
     fun notifyStreakMilestone(streakDays: Int) {
         try {
             val intent = Intent(context, MainActivity::class.java).apply {

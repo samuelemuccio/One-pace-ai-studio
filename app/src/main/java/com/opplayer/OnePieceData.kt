@@ -10,10 +10,10 @@ import java.util.Date
 import java.util.Locale
 
 enum class EpisodeType(val label: String, val hexColor: Long) {
-    MANGA_CANON("Canon", 0xFF34C759),       // Verde Canon
-    ANIME_CANON("Anime Canon", 0xFF32ADE6), // Ciano Anime Canon
-    MIXED("Mixed", 0xFFFF9F0A),             // Ambra Mixed
-    FILLER("Filler", 0xFFFF453A)            // Rosso Filler
+    MANGA_CANON("Canon", 0xFF30D15B),       // Emerald Green Canon (#30D15B)
+    ANIME_CANON("Anime Canon", 0xFF32ADE6), // Cyan Anime Canon
+    MIXED("Mixed", 0xFFFF9F0A),             // Mixed Orange (#FF9F0A)
+    FILLER("Filler", 0xFF8E8E93)            // Filler Grey (#8E8E93)
 }
 
 data class OnePieceSaga(

@@ -234,6 +234,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createNotificationChannel()
+        StreakReminderReceiver.scheduleDailyReminder(this)
         val prefs = PlaybackPreferences(this)
 
         setContent {
@@ -283,6 +284,8 @@ class MainActivity : ComponentActivity() {
                 var showStreakReminderDialog by remember { mutableStateOf(false) }
                 var showBountyExplainDialog by remember { mutableStateOf(false) }
                 var showCloudSyncDialog by remember { mutableStateOf(false) }
+                var showSettingsDialog by remember { mutableStateOf(false) }
+                val downloadManagerHelper = remember { DownloadManagerHelper(this@MainActivity) }
 
                 // Cloud & Persistent Vault Manager
                 val cloudSyncManager = remember { CloudSyncManager(this@MainActivity) }
@@ -473,18 +476,26 @@ class MainActivity : ComponentActivity() {
                     containerColor = Color(0xFF070709),
                     bottomBar = {
                         if (activeVideoUrl == null) {
-                            // PREMIUM FROSTED GLASS DOCK (Icons only, fluid sliding indicator)
+                            // PREMIUM FROSTED GLASS DOCK (Squircle Apple-style, fluid sliding indicator)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .padding(horizontal = 22.dp, vertical = 8.dp)
+                                    .padding(horizontal = 20.dp, vertical = 10.dp)
                             ) {
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(30.dp),
-                                    color = Color(0xF010131E),
-                                    border = BorderStroke(1.dp, specularBorder),
+                                    shape = RoundedCornerShape(28.dp),
+                                    color = Color(0xD80E1220),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.White.copy(alpha = 0.32f),
+                                                Color.White.copy(alpha = 0.08f)
+                                            )
+                                        )
+                                    ),
                                     shadowElevation = 24.dp
                                 ) {
                                     val navItems = listOf(
@@ -494,7 +505,7 @@ class MainActivity : ComponentActivity() {
                                         Pair(Icons.Default.FileDownload, "Download")
                                     )
 
-                                    Box(modifier = Modifier.fillMaxWidth().height(60.dp)) {
+                                    Box(modifier = Modifier.fillMaxWidth().height(62.dp)) {
                                         // Sliding indicator pill
                                         val pillPosition by animateFloatAsState(
                                             targetValue = currentTab.toFloat(),
@@ -513,12 +524,12 @@ class MainActivity : ComponentActivity() {
                                                     .width(tabWidth)
                                                     .fillMaxHeight()
                                                     .padding(horizontal = 6.dp, vertical = 6.dp)
-                                                    .clip(RoundedCornerShape(24.dp))
+                                                    .clip(RoundedCornerShape(22.dp))
                                                     .background(
                                                         Brush.verticalGradient(
                                                             listOf(
-                                                                accentRed.copy(alpha = 0.35f),
-                                                                accentRed.copy(alpha = 0.12f)
+                                                                accentRed.copy(alpha = 0.38f),
+                                                                accentRed.copy(alpha = 0.15f)
                                                             )
                                                         )
                                                     )
@@ -526,11 +537,11 @@ class MainActivity : ComponentActivity() {
                                                         width = 1.dp,
                                                         brush = Brush.verticalGradient(
                                                             listOf(
-                                                                accentRed.copy(alpha = 0.85f),
-                                                                accentRed.copy(alpha = 0.20f)
+                                                                accentRed.copy(alpha = 0.90f),
+                                                                accentRed.copy(alpha = 0.25f)
                                                             )
                                                         ),
-                                                        shape = RoundedCornerShape(24.dp)
+                                                        shape = RoundedCornerShape(22.dp)
                                                     )
                                             )
                                         }
@@ -612,6 +623,13 @@ class MainActivity : ComponentActivity() {
                                     settings.domStorageEnabled = true
                                     settings.mediaPlaybackRequiresUserGesture = false
                                     settings.setSupportMultipleWindows(false)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        settings.safeBrowsingEnabled = false
+                                    }
+                                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                    settings.databaseEnabled = true
+                                    settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                                    setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
 
                                     webViewClient = object : WebViewClient() {
                                         override fun onPageFinished(view: WebView?, url: String?) {
@@ -853,6 +871,17 @@ class MainActivity : ComponentActivity() {
                                                         ) {
                                                             Icon(Icons.Default.Search, contentDescription = "Cerca", tint = Color.White, modifier = Modifier.size(18.dp))
                                                         }
+
+                                                        // Settings Gear Icon (Cloud, Qualità Download, Notifiche, Backup)
+                                                        IconButton(
+                                                            onClick = { showSettingsDialog = true },
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.White.copy(alpha = 0.10f))
+                                                        ) {
+                                                            Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(18.dp))
+                                                        }
                                                     }
                                                 }
 
@@ -937,13 +966,23 @@ class MainActivity : ComponentActivity() {
 
                                                         Spacer(modifier = Modifier.height(18.dp))
 
-                                                        // Play button with spring feedback
+                                                        // Play button with Crimson Red glow
                                                         Surface(
                                                             shape = RoundedCornerShape(18.dp),
-                                                            color = accentRed,
-                                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                                                            shadowElevation = 8.dp,
-                                                            modifier = Modifier.fillMaxWidth()
+                                                            color = Color.Transparent,
+                                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.40f)),
+                                                            shadowElevation = 12.dp,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .background(
+                                                                    Brush.horizontalGradient(
+                                                                        listOf(
+                                                                            Color(0xFFFF2D55),
+                                                                            Color(0xFFE50914)
+                                                                        )
+                                                                    ),
+                                                                    shape = RoundedCornerShape(18.dp)
+                                                                )
                                                         ) {
                                                             Row(
                                                                 modifier = Modifier.padding(vertical = 15.dp),
@@ -983,9 +1022,9 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 }
 
-                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Spacer(modifier = Modifier.height(14.dp))
 
-                                                // Smooth Horizontal Carousel
+                                                // Smooth Horizontal Carousel (Matching Image Design)
                                                 LazyRow(
                                                     state = carouselState,
                                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -997,62 +1036,121 @@ class MainActivity : ComponentActivity() {
                                                         val itemType = OnePieceHelper.getEpisodeType(ep)
 
                                                         Surface(
-                                                            shape = RoundedCornerShape(18.dp),
-                                                            color = if (isSelected) accentRed.copy(alpha = 0.25f) else Color(0x99181822),
-                                                            border = BorderStroke(1.5.dp, if (isSelected) accentRed else Color.White.copy(alpha = 0.12f)),
+                                                            shape = RoundedCornerShape(22.dp),
+                                                            color = if (isSelected) Color(0xFF1E1017) else Color(0xFF121520),
+                                                            border = if (isSelected) {
+                                                                BorderStroke(2.dp, Color(0xFFFF2D55))
+                                                            } else {
+                                                                BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                                                            },
+                                                            shadowElevation = if (isSelected) 8.dp else 2.dp,
                                                             modifier = Modifier
-                                                                .width(136.dp)
+                                                                .width(122.dp)
+                                                                .height(146.dp)
                                                                 .iosSpringClick {
                                                                     selectedEpisodeForDetail = ep
                                                                 }
                                                         ) {
-                                                            Column(modifier = Modifier.padding(14.dp)) {
+                                                            Column(
+                                                                modifier = Modifier
+                                                                    .fillMaxSize()
+                                                                    .padding(12.dp),
+                                                                verticalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                // Top Row: Tag pill with icon + checkmark if watched
                                                                 Row(
                                                                     modifier = Modifier.fillMaxWidth(),
                                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                                     verticalAlignment = Alignment.CenterVertically
                                                                 ) {
-                                                                    Text(
-                                                                        text = "EP. $ep",
-                                                                        color = Color.White,
-                                                                        fontSize = 14.sp,
-                                                                        fontWeight = FontWeight.ExtraBold
-                                                                    )
-                                                                    if (isFav) {
-                                                                        Icon(Icons.Default.Star, contentDescription = null, tint = goldAccent, modifier = Modifier.size(15.dp))
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(7.dp),
+                                                                        color = Color(itemType.hexColor).copy(alpha = 0.22f),
+                                                                        border = BorderStroke(1.dp, Color(itemType.hexColor).copy(alpha = 0.70f))
+                                                                    ) {
+                                                                        Row(
+                                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                            verticalAlignment = Alignment.CenterVertically
+                                                                        ) {
+                                                                            Text(
+                                                                                text = itemType.label.uppercase(),
+                                                                                color = Color(itemType.hexColor),
+                                                                                fontSize = 8.sp,
+                                                                                fontWeight = FontWeight.Black
+                                                                            )
+                                                                            if (itemType == EpisodeType.MIXED) {
+                                                                                Spacer(modifier = Modifier.width(3.dp))
+                                                                                Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(itemType.hexColor), modifier = Modifier.size(9.dp))
+                                                                            } else if (itemType == EpisodeType.FILLER) {
+                                                                                Spacer(modifier = Modifier.width(3.dp))
+                                                                                Icon(Icons.Default.Flag, contentDescription = null, tint = Color(itemType.hexColor), modifier = Modifier.size(9.dp))
+                                                                            }
+                                                                        }
+                                                                    }
+
+                                                                    if (isWatched) {
+                                                                        Surface(
+                                                                            shape = CircleShape,
+                                                                            color = Color(0xFF30D15B).copy(alpha = 0.22f),
+                                                                            border = BorderStroke(1.dp, Color(0xFF30D15B))
+                                                                        ) {
+                                                                            Icon(
+                                                                                Icons.Default.Check,
+                                                                                contentDescription = "Visto",
+                                                                                tint = Color(0xFF30D15B),
+                                                                                modifier = Modifier
+                                                                                    .size(16.dp)
+                                                                                    .padding(2.dp)
+                                                                            )
+                                                                        }
+                                                                    } else if (isFav) {
+                                                                        Icon(Icons.Default.Star, contentDescription = null, tint = goldAccent, modifier = Modifier.size(14.dp))
                                                                     }
                                                                 }
 
-                                                                Spacer(modifier = Modifier.height(8.dp))
-
-                                                                Surface(
-                                                                    shape = RoundedCornerShape(6.dp),
-                                                                    color = Color(itemType.hexColor).copy(alpha = 0.20f),
-                                                                    border = BorderStroke(1.dp, Color(itemType.hexColor).copy(alpha = 0.60f))
+                                                                // Center: Big Bold Episode Number
+                                                                Box(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    contentAlignment = Alignment.CenterStart
                                                                 ) {
                                                                     Text(
-                                                                        text = itemType.label,
-                                                                        color = Color(itemType.hexColor),
-                                                                        fontSize = 8.sp,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                        text = "$ep",
+                                                                        color = Color.White,
+                                                                        fontSize = 32.sp,
+                                                                        fontWeight = FontWeight.Black,
+                                                                        letterSpacing = (-0.5).sp
                                                                     )
                                                                 }
 
-                                                                Spacer(modifier = Modifier.height(10.dp))
-
-                                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                                    Icon(
-                                                                        imageVector = if (isWatched) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                                                        contentDescription = null,
-                                                                        tint = if (isWatched) Color(0xFF34C759) else Color.Gray,
-                                                                        modifier = Modifier.size(14.dp)
-                                                                    )
-                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                // Bottom: Active action or status
+                                                                if (isSelected) {
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(10.dp),
+                                                                        color = Color(0xFF280B13),
+                                                                        border = BorderStroke(1.dp, Color(0xFFFF2D55).copy(alpha = 0.70f)),
+                                                                        modifier = Modifier.fillMaxWidth()
+                                                                    ) {
+                                                                        Row(
+                                                                            modifier = Modifier.padding(vertical = 4.dp),
+                                                                            horizontalArrangement = Arrangement.Center,
+                                                                            verticalAlignment = Alignment.CenterVertically
+                                                                        ) {
+                                                                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFFFF2D55), modifier = Modifier.size(12.dp))
+                                                                            Spacer(modifier = Modifier.width(3.dp))
+                                                                            Text(
+                                                                                text = "CONTINUA",
+                                                                                color = Color.White,
+                                                                                fontSize = 9.sp,
+                                                                                fontWeight = FontWeight.Black
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                } else {
                                                                     Text(
-                                                                        text = if (isWatched) "Visto" else "Non visto",
-                                                                        color = if (isWatched) Color(0xFF34C759) else Color.Gray,
-                                                                        fontSize = 10.sp
+                                                                        text = if (isWatched) "Visto" else "Ep. $ep",
+                                                                        color = if (isWatched) Color(0xFF30D15B) else Color.Gray,
+                                                                        fontSize = 10.sp,
+                                                                        fontWeight = FontWeight.Medium
                                                                     )
                                                                 }
                                                             }
@@ -1224,18 +1322,33 @@ class MainActivity : ComponentActivity() {
                                                         Text("Registro Saghe", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                                                     }
 
-                                                    Surface(
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        color = goldAccent.copy(alpha = 0.15f),
-                                                        border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.40f))
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
-                                                        Text(
-                                                            text = "${"%.2f".format(percentageWatched)}% Completato",
-                                                            color = goldAccent,
-                                                            fontSize = 11.sp,
-                                                            fontWeight = FontWeight.Black,
-                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                                        )
+                                                        Surface(
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            color = goldAccent.copy(alpha = 0.15f),
+                                                            border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.40f))
+                                                        ) {
+                                                            Text(
+                                                                text = "${"%.2f".format(percentageWatched)}% Completato",
+                                                                color = goldAccent,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Black,
+                                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                            )
+                                                        }
+
+                                                        IconButton(
+                                                            onClick = { showSettingsDialog = true },
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.White.copy(alpha = 0.10f))
+                                                        ) {
+                                                            Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(18.dp))
+                                                        }
                                                     }
                                                 }
 
@@ -1383,248 +1496,28 @@ class MainActivity : ComponentActivity() {
                                                 Spacer(modifier = Modifier.height(14.dp))
 
                                                 // SMART QUICK ACTIONS (Mark up to current, Copy JSON, Restore)
+                                                // Quick action pill (Backup & Restore relocated to Settings Cloud Vault)
                                                 Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    modifier = Modifier.fillMaxWidth()
                                                 ) {
-                                                    // Quick mark up to current
                                                     Surface(
                                                         shape = RoundedCornerShape(14.dp),
-                                                        color = Color(0xFF34C759).copy(alpha = 0.15f),
-                                                        border = BorderStroke(1.dp, Color(0xFF34C759).copy(alpha = 0.40f)),
+                                                        color = Color(0xFF30D15B).copy(alpha = 0.15f),
+                                                        border = BorderStroke(1.dp, Color(0xFF30D15B).copy(alpha = 0.40f)),
                                                         modifier = Modifier
-                                                            .weight(1.3f)
+                                                            .fillMaxWidth()
                                                             .iosSpringClick {
                                                                 showMarkUpToConfirmDialog = true
                                                             }
                                                     ) {
                                                         Row(
-                                                            modifier = Modifier.padding(vertical = 11.dp),
+                                                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
                                                             horizontalArrangement = Arrangement.Center,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Icon(Icons.Default.DoneAll, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(16.dp))
-                                                            Spacer(modifier = Modifier.width(5.dp))
-                                                            Text("Visti fino all'Ep. $currentEpisodeNumber", color = Color(0xFF34C759), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-
-                                                    // Copy backup
-                                                    Surface(
-                                                        shape = RoundedCornerShape(14.dp),
-                                                        color = Color.White.copy(alpha = 0.08f),
-                                                        border = BorderStroke(1.dp, specularBorder),
-                                                        modifier = Modifier
-                                                            .weight(0.9f)
-                                                            .iosSpringClick {
-                                                                val json = OnePieceHelper.exportToJson(
-                                                                    watched = watchedEpisodes,
-                                                                    favorites = favoriteEpisodes,
-                                                                    lastEp = currentEpisodeNumber,
-                                                                    lastPos = savedPosition,
-                                                                    streak = dailyStreak
-                                                                )
-                                                                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                                val clip = android.content.ClipData.newPlainText("OP_Backup", json)
-                                                                clipboard.setPrimaryClip(clip)
-                                                                Toast.makeText(this@MainActivity, "Backup copiato negli appunti! 📋", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                    ) {
-                                                        Row(
-                                                            modifier = Modifier.padding(vertical = 11.dp),
-                                                            horizontalArrangement = Arrangement.Center,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                            Text("Backup", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                                        }
-                                                    }
-
-                                                    // Restore
-                                                    Surface(
-                                                        shape = RoundedCornerShape(14.dp),
-                                                        color = accentRed.copy(alpha = 0.18f),
-                                                        border = BorderStroke(1.dp, accentRed.copy(alpha = 0.45f)),
-                                                        modifier = Modifier
-                                                            .weight(0.9f)
-                                                            .iosSpringClick { showImportDialog = true }
-                                                    ) {
-                                                        Row(
-                                                            modifier = Modifier.padding(vertical = 11.dp),
-                                                            horizontalArrangement = Arrangement.Center,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Icon(Icons.Default.FileDownload, contentDescription = null, tint = accentRed, modifier = Modifier.size(15.dp))
-                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                            Text("Ripristina", color = accentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-                                                }
-
-                                                Spacer(modifier = Modifier.height(14.dp))
-
-                                                // CLOUD SYNC & PERSISTENT VAULT CARD (Anti-Disinstallazione)
-                                                Surface(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    shape = RoundedCornerShape(22.dp),
-                                                    color = Color(0xF0121624),
-                                                    border = BorderStroke(1.dp, Color(0xFF32ADE6).copy(alpha = 0.35f)),
-                                                    shadowElevation = 10.dp
-                                                ) {
-                                                    Column(modifier = Modifier.padding(16.dp)) {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                                Icon(
-                                                                    Icons.Default.CloudDone,
-                                                                    contentDescription = null,
-                                                                    tint = Color(0xFF32ADE6),
-                                                                    modifier = Modifier.size(20.dp)
-                                                                )
-                                                                Spacer(modifier = Modifier.width(8.dp))
-                                                                Text("Salvataggio Cloud & Anti-Disinstallazione", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                                            }
-
-                                                            Surface(
-                                                                shape = RoundedCornerShape(10.dp),
-                                                                color = Color(0xFF32ADE6).copy(alpha = 0.15f),
-                                                                modifier = Modifier.iosSpringClick { showCloudSyncDialog = true }
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF32ADE6), modifier = Modifier.size(12.dp))
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text("Account", color = Color(0xFF32ADE6), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                                        Text(
-                                                            text = "I progressi vengono salvati continuamente nella memoria persistente del dispositivo. Se disinstalli e reinstalli l'app, verranno ricaricati automaticamente!",
-                                                            color = Color.Gray,
-                                                            fontSize = 11.sp,
-                                                            lineHeight = 15.sp
-                                                        )
-
-                                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Text(
-                                                                text = "Account: $cloudUserEmail",
-                                                                color = Color.White.copy(alpha = 0.9f),
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Medium
-                                                            )
-                                                            Text(
-                                                                text = cloudLastSyncText,
-                                                                color = Color(0xFF34C759),
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.SemiBold
-                                                            )
-                                                        }
-
-                                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                        ) {
-                                                            // Sync Cloud button
-                                                            Surface(
-                                                                modifier = Modifier
-                                                                    .weight(1f)
-                                                                    .iosSpringClick {
-                                                                        coroutineScope.launch {
-                                                                            val json = OnePieceHelper.exportToJson(
-                                                                                watched = watchedEpisodes,
-                                                                                favorites = favoriteEpisodes,
-                                                                                lastEp = currentEpisodeNumber,
-                                                                                lastPos = savedPosition,
-                                                                                streak = dailyStreak
-                                                                            )
-                                                                            val res = cloudSyncManager.syncToCloud(json, cloudUserEmail)
-                                                                            cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
-                                                                            Toast.makeText(
-                                                                                this@MainActivity,
-                                                                                res.getOrNull() ?: "Sincronizzato sul Cloud! ☁️",
-                                                                                Toast.LENGTH_SHORT
-                                                                            ).show()
-                                                                        }
-                                                                    },
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                color = Color(0xFF32ADE6).copy(alpha = 0.20f),
-                                                                border = BorderStroke(1.dp, Color(0xFF32ADE6).copy(alpha = 0.50f))
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(vertical = 9.dp),
-                                                                    horizontalArrangement = Arrangement.Center,
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF32ADE6), modifier = Modifier.size(15.dp))
-                                                                    Spacer(modifier = Modifier.width(5.dp))
-                                                                    Text("Sincronizza Cloud", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                                }
-                                                            }
-
-                                                            // Restore Cloud button
-                                                            Surface(
-                                                                modifier = Modifier
-                                                                    .weight(1f)
-                                                                    .iosSpringClick {
-                                                                        coroutineScope.launch {
-                                                                            val res = cloudSyncManager.restoreFromCloud(cloudUserEmail)
-                                                                            if (res.isSuccess) {
-                                                                                val content = res.getOrNull() ?: ""
-                                                                                val parsed = OnePieceHelper.importFromJson(content)
-                                                                                if (parsed != null) {
-                                                                                    parsed.watchedEpisodes.forEach { prefs.markEpisodeWatched(it, true) }
-                                                                                    parsed.favoriteEpisodes.forEach { prefs.toggleFavorite(it) }
-                                                                                    prefs.saveLastPlayback(
-                                                                                        OnePieceHelper.buildEpisodeUrl("", parsed.lastEpisode),
-                                                                                        parsed.lastEpisode,
-                                                                                        parsed.lastPositionMs
-                                                                                    )
-                                                                                    prefs.saveDailyStreak(parsed.dailyStreak, parsed.lastWatchDate)
-                                                                                    watchedEpisodes = prefs.getWatchedEpisodes()
-                                                                                    favoriteEpisodes = prefs.getFavoriteEpisodes()
-                                                                                    currentEpisodeNumber = prefs.getLastEpisode()
-                                                                                    dailyStreak = prefs.getStreak()
-                                                                                    cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
-                                                                                    Toast.makeText(this@MainActivity, "Dati ripristinati con successo dal Cloud Vault! 🏴‍☠️", Toast.LENGTH_LONG).show()
-                                                                                } else {
-                                                                                    Toast.makeText(this@MainActivity, "Formato backup non valido", Toast.LENGTH_SHORT).show()
-                                                                                }
-                                                                            } else {
-                                                                                Toast.makeText(this@MainActivity, res.exceptionOrNull()?.message ?: "Errore", Toast.LENGTH_LONG).show()
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                color = Color(0xFF34C759).copy(alpha = 0.20f),
-                                                                border = BorderStroke(1.dp, Color(0xFF34C759).copy(alpha = 0.50f))
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(vertical = 9.dp),
-                                                                    horizontalArrangement = Arrangement.Center,
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(15.dp))
-                                                                    Spacer(modifier = Modifier.width(5.dp))
-                                                                    Text("Scarica Cloud", color = Color(0xFF34C759), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                                }
-                                                            }
+                                                            Icon(Icons.Default.DoneAll, contentDescription = null, tint = Color(0xFF30D15B), modifier = Modifier.size(18.dp))
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text("Segna tutti gli episodi come visti fino all'Ep. $currentEpisodeNumber", color = Color(0xFF30D15B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                         }
                                                     }
                                                 }
@@ -1738,8 +1631,16 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                         }
 
-                                                        // Micro progress bar inside saga card
+                                                        // Micro progress bar inside saga card with explicit explanation
                                                         Spacer(modifier = Modifier.height(10.dp))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("Progresso Saga", color = Color.Gray, fontSize = 10.sp)
+                                                            Text("$watchedInSaga / $totalInSaga ep. (${(sagaPercent * 100).toInt()}%)", color = if (isCompleted) Color(0xFF34C759) else Color.White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                        Spacer(modifier = Modifier.height(4.dp))
                                                         LinearProgressIndicator(
                                                             progress = { sagaPercent },
                                                             modifier = Modifier
@@ -1928,112 +1829,18 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 3 -> {
-                                    // TAB 3: DOWNLOAD OFFLINE
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color(0xFF070709))
-                                    ) {
-                                        LazyColumn(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .padding(horizontal = 18.dp),
-                                            contentPadding = PaddingValues(top = 18.dp, bottom = 24.dp)
-                                        ) {
-                                            item {
-                                                Text("Download Offline", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                                                Text("File multimediali memorizzati sul dispositivo", color = Color.Gray, fontSize = 13.sp)
-                                                Spacer(modifier = Modifier.height(16.dp))
-
-                                                if (downloadedList.isEmpty()) {
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(top = 40.dp),
-                                                        shape = RoundedCornerShape(24.dp),
-                                                        color = Color(0x66181822),
-                                                        border = BorderStroke(1.dp, specularBorder)
-                                                    ) {
-                                                        Column(
-                                                            modifier = Modifier.padding(28.dp),
-                                                            horizontalAlignment = Alignment.CenterHorizontally
-                                                        ) {
-                                                            Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
-                                                            Spacer(modifier = Modifier.height(14.dp))
-                                                            Text(
-                                                                text = "Nessun episodio in locale",
-                                                                color = Color.White,
-                                                                fontWeight = FontWeight.Bold,
-                                                                fontSize = 17.sp
-                                                            )
-                                                            Spacer(modifier = Modifier.height(6.dp))
-                                                            Text(
-                                                                text = "Tocca l'icona download nella barra del player durante la visione per salvare l'episodio e guardarlo senza connessione.",
-                                                                color = Color.Gray,
-                                                                fontSize = 12.sp,
-                                                                textAlign = TextAlign.Center,
-                                                                lineHeight = 17.sp
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            items(downloadedList) { item ->
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(vertical = 5.dp),
-                                                    shape = RoundedCornerShape(20.dp),
-                                                    color = Color(0x99181822),
-                                                    border = BorderStroke(1.dp, specularBorder)
-                                                ) {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(16.dp),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Column(modifier = Modifier.weight(1f)) {
-                                                            Text(text = "Episodio ${item.episodeNumber}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                                            Text(text = item.sizeMb, color = Color.Gray, fontSize = 12.sp)
-                                                        }
-
-                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                            IconButton(
-                                                                onClick = {
-                                                                    activeVideoUrl = item.file.absolutePath
-                                                                    currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, item.episodeNumber)
-                                                                },
-                                                                modifier = Modifier.iosSpringClick {
-                                                                    activeVideoUrl = item.file.absolutePath
-                                                                    currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, item.episodeNumber)
-                                                                }
-                                                            ) {
-                                                                Icon(Icons.Default.PlayCircle, contentDescription = null, tint = accentRed)
-                                                            }
-
-                                                            IconButton(
-                                                                onClick = {
-                                                                    item.file.delete()
-                                                                    downloadedList = getDownloadedFilesList()
-                                                                    Toast.makeText(this@MainActivity, "Episodio eliminato", Toast.LENGTH_SHORT).show()
-                                                                },
-                                                                modifier = Modifier.iosSpringClick {
-                                                                    item.file.delete()
-                                                                    downloadedList = getDownloadedFilesList()
-                                                                    Toast.makeText(this@MainActivity, "Episodio eliminato", Toast.LENGTH_SHORT).show()
-                                                                }
-                                                            ) {
-                                                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Gray)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                    // TAB 3: DOWNLOAD OFFLINE MODERNO (720p/1080p, Batch Download, Progress Real-Time, Cancel Reale)
+                                    DownloadTabContent(
+                                        downloadManagerHelper = downloadManagerHelper,
+                                        prefs = prefs,
+                                        currentEpisodeNumber = currentEpisodeNumber,
+                                        watchedEpisodes = watchedEpisodes,
+                                        onPlayOfflineEpisode = { filePath, epNum ->
+                                            activeVideoUrl = filePath
+                                            currentEpisodeNumber = epNum
+                                            currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, epNum)
                                         }
-                                    }
+                                    )
                                 }
                             }
                         }
@@ -2266,6 +2073,43 @@ class MainActivity : ComponentActivity() {
                                                             fontWeight = FontWeight.Bold
                                                         )
                                                     }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                            // Direct Download Button without opening Player!
+                                            val currentPreferredQuality = prefs.getPreferredDownloadQuality()
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = Color(0x3332ADE6),
+                                                border = BorderStroke(1.dp, Color(0xFF32ADE6).copy(alpha = 0.45f)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .iosSpringClick {
+                                                        coroutineScope.launch {
+                                                            downloadManagerHelper.startDownloadForEpisode(detailEp, currentPreferredQuality)
+                                                        }
+                                                        Toast.makeText(
+                                                            this@MainActivity,
+                                                            "Avvio download Ep. $detailEp ($currentPreferredQuality)... Controlla la tab Download per il progresso!",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                    }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(vertical = 12.dp),
+                                                    horizontalArrangement = Arrangement.Center,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(Icons.Default.Download, contentDescription = null, tint = Color(0xFF32ADE6), modifier = Modifier.size(18.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "Scarica Episodio ($currentPreferredQuality)",
+                                                        color = Color.White,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
                                                 }
                                             }
                                         }
@@ -2811,173 +2655,30 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // CLOUD SYNC & ACCOUNT CONFIGURATION DIALOG
-                        if (showCloudSyncDialog) {
-                            var tempEmail by remember { mutableStateOf(cloudUserEmail) }
-                            Dialog(
-                                onDismissRequest = { showCloudSyncDialog = false },
-                                properties = DialogProperties(usePlatformDefaultWidth = false)
-                            ) {
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.92f)
-                                        .clip(RoundedCornerShape(26.dp)),
-                                    color = Color(0xF0121624),
-                                    border = BorderStroke(1.dp, specularBorder),
-                                    shadowElevation = 24.dp
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .padding(22.dp)
-                                            .verticalScroll(rememberScrollState())
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = Color(0xFF32ADE6), modifier = Modifier.size(24.dp))
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Column {
-                                                    Text(
-                                                        text = "Cloud Vault & Account",
-                                                        color = Color.White,
-                                                        fontSize = 17.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                    Text(
-                                                        text = "Protezione anti-disinstallazione",
-                                                        color = Color.Gray,
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                            IconButton(onClick = { showCloudSyncDialog = false }) {
-                                                Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.Gray)
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFF34C759).copy(alpha = 0.12f),
-                                            border = BorderStroke(1.dp, Color(0xFF34C759).copy(alpha = 0.35f)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp)) {
-                                                Text(
-                                                    text = "🛡️ Salvataggio Persistente Attivo",
-                                                    color = Color(0xFF34C759),
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "I tuoi episodi visti, preferiti, minutaggio e streak vengono scritti nella memoria permanente del dispositivo. Se disinstalli e reinstalli l'app in futuro, il salvataggio verrà ricaricato in automatico al primo avvio!",
-                                                    color = Color.White.copy(alpha = 0.9f),
-                                                    fontSize = 11.sp,
-                                                    lineHeight = 15.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        Text("Email Account Collegato:", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        OutlinedTextField(
-                                            value = tempEmail,
-                                            onValueChange = { tempEmail = it },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                                            placeholder = { Text("samuele102014@gmail.com", color = Color.DarkGray) },
-                                            shape = RoundedCornerShape(14.dp),
-                                            singleLine = true,
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = Color(0xFF32ADE6),
-                                                unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
-                                                focusedTextColor = Color.White,
-                                                unfocusedTextColor = Color.White
-                                            )
-                                        )
-
-                                        Spacer(modifier = Modifier.height(14.dp))
-
-                                        // Auto-sync switch row
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text("Salvataggio Automatico", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                                Text("Aggiorna il file vault ad ogni episodio", color = Color.Gray, fontSize = 10.sp)
-                                            }
-                                            Switch(
-                                                checked = isAutoSyncEnabled,
-                                                onCheckedChange = {
-                                                    isAutoSyncEnabled = it
-                                                    cloudSyncManager.setAutoSyncEnabled(it)
-                                                }
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                        ) {
-                                            OutlinedButton(
-                                                onClick = {
-                                                    cloudSyncManager.setUserEmail(tempEmail)
-                                                    cloudUserEmail = tempEmail
-                                                    showCloudSyncDialog = false
-                                                    Toast.makeText(this@MainActivity, "Account salvato: $tempEmail", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                                shape = RoundedCornerShape(14.dp),
-                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
-                                            ) {
-                                                Text("Salva", color = Color.LightGray)
-                                            }
-
-                                            Button(
-                                                onClick = {
-                                                    cloudSyncManager.setUserEmail(tempEmail)
-                                                    cloudUserEmail = tempEmail
-                                                    coroutineScope.launch {
-                                                        val json = OnePieceHelper.exportToJson(
-                                                            watched = watchedEpisodes,
-                                                            favorites = favoriteEpisodes,
-                                                            lastEp = currentEpisodeNumber,
-                                                            lastPos = savedPosition,
-                                                            streak = dailyStreak
-                                                        )
-                                                        val res = cloudSyncManager.syncToCloud(json, tempEmail)
-                                                        cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
-                                                        Toast.makeText(this@MainActivity, res.getOrNull() ?: "Sincronizzato! ☁️", Toast.LENGTH_SHORT).show()
-                                                        showCloudSyncDialog = false
-                                                    }
-                                                },
-                                                modifier = Modifier.weight(1.3f),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF32ADE6)),
-                                                shape = RoundedCornerShape(14.dp)
-                                            ) {
-                                                Icon(Icons.Default.CloudDone, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Sincronizza Ora", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Black)
-                                            }
-                                        }
-                                    }
+                        // SETTINGS & CLOUD DIALOG MODAL (Gear Icon)
+                        SettingsDialog(
+                            isOpen = showSettingsDialog,
+                            onDismiss = { showSettingsDialog = false },
+                            prefs = prefs,
+                            cloudSyncManager = cloudSyncManager,
+                            currentEpisode = currentEpisodeNumber,
+                            dailyStreak = dailyStreak,
+                            watchedCount = watchedEpisodes.size,
+                            onRestoreJsonRequested = {
+                                showImportDialog = true
+                            },
+                            onMarkAllWatchedUpToCurrent = {
+                                for (ep in 1..currentEpisodeNumber) {
+                                    prefs.markEpisodeWatched(ep, true)
                                 }
+                                watchedEpisodes = prefs.getWatchedEpisodes()
+                                Toast.makeText(this@MainActivity, "Segnati come visti fino all'episodio $currentEpisodeNumber! ✅", Toast.LENGTH_SHORT).show()
+                            },
+                            onSyncSuccess = { email ->
+                                cloudUserEmail = email
+                                cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
                             }
-                        }
+                        )
                         activeVideoUrl?.let { videoUrl ->
                             VideoPlayerScreen(
                                 videoUrl = videoUrl,
