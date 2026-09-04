@@ -1,6 +1,8 @@
 name: AI Agent con GPT-5.6-SOL (Azure Foundry)
 
 on:
+  workflow_dispatch:
+
   issue_comment:
     types: [created]
 
