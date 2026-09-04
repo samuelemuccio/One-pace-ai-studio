@@ -1,85 +1,90 @@
-name: AI Agent con GPT-5.6-SOL (Azure Foundry)
+name: Test Azure GPT-5.6-SOL
 
 on:
   workflow_dispatch:
-
   issue_comment:
-    types: [created]
+    types:
+      - created
 
 permissions:
-  contents: write
+  contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
 
 jobs:
-  ai-agent:
+  test-azure:
     runs-on: ubuntu-latest
 
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.issue.pull_request == null &&
-        contains(github.event.comment.body, '/ai')
-      )
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Chiama Azure OpenAI (GPT-5.6-SOL) - test connessione
-        id: call_azure
-        run: |
-          RESPONSE=$(curl -s -X POST "${AZURE_OPENAI_BASE_URL}responses" \
-            -H "Content-Type: application/json" \
-            -H "api-key: ${AZURE_OPENAI_API_KEY}" \
-            -d '{
-                  "model": "'"${AZURE_OPENAI_MODEL}"'",
-                  "input": "Rispondi con una sola frase: la connessione funziona correttamente."
-                }')
-          echo "$RESPONSE" > azure_response.json
-          echo "RISPOSTA GREZZA:"
-          cat azure_response.json
+      - name: Verifica variabili
+        shell: bash
         env:
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
-          AZURE_OPENAI_MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
-
-      - name: Estrai testo risposta
-        id: extract
+          API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
+          MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
         run: |
-          TEXT=$(cat azure_response.json | python3 -c "
-import json,sys
-try:
-    data = json.load(sys.stdin)
-    text = ''
-    if 'output' in data:
-        for item in data['output']:
-            if 'content' in item:
-                for c in item['content']:
-                    if 'text' in c:
-                        text += c['text']
-    elif 'output_text' in data:
-        text = data['output_text']
-    else:
-        text = json.dumps(data)[:500]
-    print(text)
-except Exception as e:
-    print('Errore nel leggere la risposta: ' + str(e))
-")
-          echo "testo<<EOF" >> $GITHUB_OUTPUT
-          echo "$TEXT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          set -e
 
-      - name: Commenta sull'issue con il risultato
-        if: github.event_name == 'issue_comment'
+          if [ -z "$API_KEY" ]; then
+            echo "ERRORE: secret AZURE_OPENAI_API_KEY mancante"
+            exit 1
+          fi
+
+          if [ -z "$BASE_URL" ]; then
+            echo "ERRORE: secret AZURE_OPENAI_BASE_URL mancante"
+            exit 1
+          fi
+
+          if [ -z "$MODEL" ]; then
+            echo "ERRORE: secret AZURE_OPENAI_MODEL mancante"
+            exit 1
+          fi
+
+          echo "I tre secret esistono."
+          echo "Endpoint configurato: $BASE_URL"
+          echo "Modello configurato: $MODEL"
+
+      - name: Chiama Azure OpenAI
+        shell: bash
+        env:
+          API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
+          MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
+        run: |
+          set -e
+
+          URL="${BASE_URL%/}/responses"
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST "$URL" \
+            --header "Content-Type: application/json" \
+            --header "api-key: $API_KEY" \
+            --data "$(printf '{"model":"%s","input":"Rispondi soltanto: CONNESSIONE OK"}' "$MODEL")" \
+            --output azure-response.json
+
+          echo "Risposta ricevuta da Azure:"
+          cat azure-response.json
+
+      - name: Rispondi all'issue
+        if: ${{ github.event_name == 'issue_comment' }}
         uses: actions/github-script@v7
         with:
           script: |
-            const testo = `${{ steps.extract.outputs.testo }}`;
+            const fs = require("fs");
+            const risposta = fs.readFileSync("azure-response.json", "utf8");
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: "Risposta da GPT-5.6-SOL:
+              body: "✅ Azure ha risposto:
 
-" + testo
+```json
+" +
+                risposta.slice(0, 6000) +
+                "
+```"
             });
