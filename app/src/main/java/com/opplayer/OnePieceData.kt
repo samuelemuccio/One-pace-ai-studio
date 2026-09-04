@@ -10,10 +10,10 @@ import java.util.Date
 import java.util.Locale
 
 enum class EpisodeType(val label: String, val hexColor: Long) {
-    MANGA_CANON("CANON", 0xFF34C759),       // Verde iOS
-    ANIME_CANON("ANIME CANON", 0xFF32ADE6), // Ciano iOS
-    MIXED("MISTO", 0xFFFF9F0A),             // Arancio Ambra iOS
-    FILLER("FILLER", 0xFFFF453A)            // Rosso iOS
+    MANGA_CANON("Canon", 0xFF34C759),       // Verde Canon
+    ANIME_CANON("Anime Canon", 0xFF32ADE6), // Ciano Anime Canon
+    MIXED("Mixed", 0xFFFF9F0A),             // Ambra Mixed
+    FILLER("Filler", 0xFFFF453A)            // Rosso Filler
 }
 
 data class OnePieceSaga(
@@ -45,17 +45,23 @@ object OnePieceHelper {
     const val TOTAL_AIRING_EPISODES = 1176
 
     val SAGAS = listOf(
-        OnePieceSaga("East Blue", 1..61, "Le origini della ciurma di Cappello di Paglia", 0xFF34C759),
-        OnePieceSaga("Alabasta", 62..135, "L'ingresso nella Rotta Maggiore e la Baroque Works", 0xFFFF9F0A),
-        OnePieceSaga("Skypiea", 136..206, "L'isola nel cielo e il dio Ener", 0xFF32ADE6),
-        OnePieceSaga("Water 7 & Enies Lobby", 207..325, "La guerra contro il Governo Mondiale e la CP9", 0xFFFF3B30),
-        OnePieceSaga("Thriller Bark", 326..384, "Gekko Moria, Brook e Nightmare Rufy", 0xFFAF52DE),
-        OnePieceSaga("Guerra ai Vertici", 385..516, "Arcipelago Sabaody, Impel Down e Marineford", 0xFFFF2D55),
-        OnePieceSaga("Isola Uomini Pesce", 517..574, "Il raduno dopo 2 anni e l'abisso marino", 0xFF00C7BE),
-        OnePieceSaga("Dressrosa & Punk Hazard", 575..746, "L'alleanza pirata e la caduta di Doflamingo", 0xFFFF9500),
-        OnePieceSaga("Whole Cake Island", 747..891, "La saga dei Quattro Imperatori e Sanji", 0xFFFF2A42),
-        OnePieceSaga("Paese di Wano", 892..1085, "I foderi rossi, Kaido e il risveglio del Gear 5", 0xFFFFCC00),
-        OnePieceSaga("Egghead & Elbaf", 1086..TOTAL_AIRING_EPISODES, "L'isola del futuro e la Saga Finale", 0xFF5856D6)
+        OnePieceSaga("East Blue Saga", 1..61, "Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown", 0xFF34C759),
+        OnePieceSaga("Arabasta Saga", 62..135, "Reverse Mountain, Whiskey Peak, Little Garden, Drum Island, Arabasta", 0xFFFF9F0A),
+        OnePieceSaga("Sky Island Saga", 136..206, "Jaya, Skypiea, G-8 Arc", 0xFF32ADE6),
+        OnePieceSaga("Water 7 Saga", 207..325, "Long Ring Long Land, Water 7, Enies Lobby, Post-Enies Lobby", 0xFFFF3B30),
+        OnePieceSaga("Thriller Bark Saga", 326..384, "Thriller Bark, Spa Island", 0xFFAF52DE),
+        OnePieceSaga("Summit War: Sabaody & Amazon Lily", 385..421, "Sabaody Archipelago, Amazon Lily", 0xFFFF2D55),
+        OnePieceSaga("Summit War: Impel Down", 422..456, "The great underwater prison breakout", 0xFFFF3838),
+        OnePieceSaga("Summit War: Marineford", 457..489, "The Paramount War at Marineford", 0xFFE02424),
+        OnePieceSaga("Summit War: Post-War", 490..516, "Luffy & Ace childhood flashback, 3D2Y code", 0xFFFF6482),
+        OnePieceSaga("Fish-Man Island Saga", 517..574, "Return to Sabaody, Fish-Man Island", 0xFF00C7BE),
+        OnePieceSaga("Dressrosa: Punk Hazard", 575..628, "Caesar Clown, Trafalgar Law alliance, Punk Hazard", 0xFFFF9500),
+        OnePieceSaga("Dressrosa Saga", 629..746, "Corrida Colosseum, Doflamingo, Gear Fourth", 0xFFFF7B00),
+        OnePieceSaga("Four Emperors: Zou", 747..782, "Zou Island, Mink Tribe, Road Poneglyph", 0xFF30D158),
+        OnePieceSaga("Four Emperors: Whole Cake Island", 783..877, "Sanji rescue, Big Mom tea party, Katakuri duel", 0xFFFF2A42),
+        OnePieceSaga("Levely Arc", 878..891, "World Conference of monarchs at Mariejois", 0xFFFFD700),
+        OnePieceSaga("Wano Country Saga", 892..1085, "Oden flashback, Onigashima raid, Gear Fifth", 0xFFFFCC00),
+        OnePieceSaga("Egghead Saga & Future", 1086..TOTAL_AIRING_EPISODES, "Future Island Egghead, Dr. Vegapunk, Final Saga", 0xFF5856D6)
     )
 
     private val fillerEpisodes = setOf(
