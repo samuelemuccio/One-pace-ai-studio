@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -30,6 +30,17 @@ jobs:
             gradle wrapper --gradle-version 8.7
           fi
           chmod +x gradlew
+
+      - name: Prepara Keystore di debug
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            echo "Decodifica debug.keystore.base64 in corso..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ ! -f debug.keystore ]; then
+            echo "Generazione fallback debug.keystore con keytool..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Compila APK di Debug
         run: ./gradlew assembleDebug --stacktrace
