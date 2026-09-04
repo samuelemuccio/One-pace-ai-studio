@@ -803,26 +803,6 @@ fun VideoPlayerScreen(
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(26.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color.White.copy(alpha = 0.05f),
-                        border = BorderStroke(1.dp, specularBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text("Comandi Rapidi Intuitivi", color = Color(0xFFFFD700), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                "• Doppio tocco a sinistra: Salto indietro di ${skipIntervalSeconds}s\n• Doppio tocco a destra: Salto avanti di ${skipIntervalSeconds}s\n• Tocco centrale: Mostra/Nascondi controlli\n• Slider fluido velocità: Da 0.5x a 2.5x",
-                                color = Color.LightGray,
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
                 }
             }
         }

@@ -20,9 +20,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,6 +69,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 data class DownloadedFileItem(
     val episodeNumber: Int,
@@ -202,6 +205,17 @@ class MainActivity : ComponentActivity() {
                 var favoriteEpisodes by remember { mutableStateOf(prefs.getFavoriteEpisodes()) }
                 var downloadedList by remember { mutableStateOf(getDownloadedFilesList()) }
 
+                // Gamification & Rotta State
+                var dailyStreak by remember { mutableIntStateOf(prefs.getStreak()) }
+                val bountyBeli by remember(watchedEpisodes) { derivedStateOf { OnePieceHelper.calculateBounty(watchedEpisodes.size) } }
+                val pirateRank by remember(watchedEpisodes) { derivedStateOf { OnePieceHelper.getPirateRank(watchedEpisodes.size) } }
+                var selectedSagaIndex by remember {
+                    mutableIntStateOf(
+                        OnePieceHelper.SAGAS.indexOfFirst { savedEpisode in it.range }.coerceAtLeast(0)
+                    )
+                }
+                var selectedFilterTag by remember { mutableStateOf("Tutti") }
+
                 // Dialogs
                 var showImportDialog by remember { mutableStateOf(false) }
                 var importInputText by remember { mutableStateOf("") }
@@ -278,6 +292,9 @@ class MainActivity : ComponentActivity() {
                     val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, targetEp)
                     currentWebUrl = epUrl
 
+                    val updatedStreak = prefs.recordWatchForStreak()
+                    dailyStreak = updatedStreak
+
                     // 1. Controlla subito se c'è un file offline scaricato in locale
                     val localFile = downloadedList.firstOrNull { it.episodeNumber == targetEp }
                     if (localFile != null && localFile.file.exists()) {
@@ -337,52 +354,52 @@ class MainActivity : ComponentActivity() {
                     containerColor = Color(0xFF070709),
                     bottomBar = {
                         if (activeVideoUrl == null) {
-                            // ANIMATED FROSTED GLASS DOCK (Cool sliding pill indicator)
+                            // PREMIUM FROSTED GLASS DOCK (Icons only, fluid sliding indicator)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                                    .padding(horizontal = 22.dp, vertical = 8.dp)
                             ) {
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(32.dp),
-                                    color = Color(0xF212121A),
+                                    shape = RoundedCornerShape(30.dp),
+                                    color = Color(0xF010131E),
                                     border = BorderStroke(1.dp, specularBorder),
-                                    shadowElevation = 20.dp
+                                    shadowElevation = 24.dp
                                 ) {
-                                    val tabs = listOf(
-                                        Triple("Cinema", Icons.Default.Movie, 0),
-                                        Triple("Registro", Icons.Default.Analytics, 1),
-                                        Triple("Sito Web", Icons.Default.Public, 2),
-                                        Triple("Download", Icons.Default.Folder, 3)
+                                    val navItems = listOf(
+                                        Pair(Icons.Default.PlayCircle, "Cinema"),
+                                        Pair(Icons.Default.Explore, "Registro"),
+                                        Pair(Icons.Default.Language, "Sito Web"),
+                                        Pair(Icons.Default.FileDownload, "Download")
                                     )
 
-                                    Box(modifier = Modifier.fillMaxWidth().height(68.dp)) {
+                                    Box(modifier = Modifier.fillMaxWidth().height(60.dp)) {
                                         // Sliding indicator pill
                                         val pillPosition by animateFloatAsState(
                                             targetValue = currentTab.toFloat(),
                                             animationSpec = spring(
-                                                dampingRatio = 0.72f,
+                                                dampingRatio = 0.75f,
                                                 stiffness = Spring.StiffnessMediumLow
                                             ),
                                             label = "pillPos"
                                         )
 
                                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                                            val tabWidth = maxWidth / tabs.size
+                                            val tabWidth = maxWidth / navItems.size
                                             Box(
                                                 modifier = Modifier
                                                     .offset(x = tabWidth * pillPosition)
                                                     .width(tabWidth)
                                                     .fillMaxHeight()
                                                     .padding(horizontal = 6.dp, vertical = 6.dp)
-                                                    .clip(RoundedCornerShape(26.dp))
+                                                    .clip(RoundedCornerShape(24.dp))
                                                     .background(
                                                         Brush.verticalGradient(
                                                             listOf(
                                                                 accentRed.copy(alpha = 0.35f),
-                                                                accentRed.copy(alpha = 0.15f)
+                                                                accentRed.copy(alpha = 0.12f)
                                                             )
                                                         )
                                                     )
@@ -390,11 +407,11 @@ class MainActivity : ComponentActivity() {
                                                         width = 1.dp,
                                                         brush = Brush.verticalGradient(
                                                             listOf(
-                                                                accentRed.copy(alpha = 0.75f),
+                                                                accentRed.copy(alpha = 0.85f),
                                                                 accentRed.copy(alpha = 0.20f)
                                                             )
                                                         ),
-                                                        shape = RoundedCornerShape(26.dp)
+                                                        shape = RoundedCornerShape(24.dp)
                                                     )
                                             )
                                         }
@@ -404,7 +421,7 @@ class MainActivity : ComponentActivity() {
                                             horizontalArrangement = Arrangement.SpaceAround,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            tabs.forEach { (label, icon, idx) ->
+                                            navItems.forEachIndexed { idx, (icon, label) ->
                                                 val isSelected = currentTab == idx
 
                                                 Box(
@@ -425,19 +442,33 @@ class MainActivity : ComponentActivity() {
                                                         horizontalAlignment = Alignment.CenterHorizontally,
                                                         verticalArrangement = Arrangement.Center
                                                     ) {
-                                                        Icon(
-                                                            imageVector = icon,
-                                                            contentDescription = label,
-                                                            tint = if (isSelected) Color.White else Color(0xFF8E8E93),
-                                                            modifier = Modifier.size(if (isSelected) 24.dp else 21.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.height(3.dp))
-                                                        Text(
-                                                            text = label,
-                                                            fontSize = 10.sp,
-                                                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                                            color = if (isSelected) Color.White else Color(0xFF8E8E93)
-                                                        )
+                                                        Box(contentAlignment = Alignment.TopEnd) {
+                                                            Icon(
+                                                                imageVector = icon,
+                                                                contentDescription = label,
+                                                                tint = if (isSelected) Color.White else Color(0xFF8E8E93),
+                                                                modifier = Modifier.size(if (isSelected) 26.dp else 22.dp)
+                                                            )
+                                                            if (idx == 3 && downloadedList.isNotEmpty()) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .offset(x = 6.dp, y = (-4).dp)
+                                                                        .size(8.dp)
+                                                                        .clip(CircleShape)
+                                                                        .background(accentRed)
+                                                                )
+                                                            }
+                                                        }
+
+                                                        if (isSelected) {
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(accentRed)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -621,7 +652,7 @@ class MainActivity : ComponentActivity() {
                                             contentPadding = PaddingValues(top = 18.dp, bottom = 28.dp)
                                         ) {
                                             item {
-                                                // Header with Quick Jump button
+                                                // Header with Bounty, Streak & Quick Jump button
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
                                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -632,30 +663,73 @@ class MainActivity : ComponentActivity() {
                                                             text = "ONE PIECE • CINEMA",
                                                             color = accentRed,
                                                             fontWeight = FontWeight.Black,
-                                                            fontSize = 12.sp,
+                                                            fontSize = 11.sp,
                                                             letterSpacing = 2.sp
                                                         )
                                                         Text(
                                                             text = "Rotta Maggiore",
                                                             color = Color.White,
                                                             fontWeight = FontWeight.Bold,
-                                                            fontSize = 28.sp
+                                                            fontSize = 26.sp
                                                         )
                                                     }
 
-                                                    Surface(
-                                                        shape = RoundedCornerShape(20.dp),
-                                                        color = Color.White.copy(alpha = 0.09f),
-                                                        border = BorderStroke(1.dp, specularBorder),
-                                                        modifier = Modifier.iosSpringClick { showQuickJumpDialog = true }
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
-                                                        Row(
-                                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                                            verticalAlignment = Alignment.CenterVertically
+                                                        // Bounty Beli Badge (Click to open Registro)
+                                                        Surface(
+                                                            shape = RoundedCornerShape(16.dp),
+                                                            color = Color(0x33FFD700),
+                                                            border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.5f)),
+                                                            modifier = Modifier.iosSpringClick { currentTab = 1 }
                                                         ) {
-                                                            Icon(Icons.Default.Search, contentDescription = "Cerca", tint = Color.White, modifier = Modifier.size(17.dp))
-                                                            Spacer(modifier = Modifier.width(6.dp))
-                                                            Text("Salta a...", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            Row(
+                                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("฿", color = goldAccent, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                                                Spacer(modifier = Modifier.width(3.dp))
+                                                                Text(
+                                                                    text = OnePieceHelper.formatBeli(bountyBeli.first),
+                                                                    color = Color.White,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 11.sp
+                                                                )
+                                                            }
+                                                        }
+
+                                                        // Streak Badge
+                                                        Surface(
+                                                            shape = RoundedCornerShape(16.dp),
+                                                            color = Color(0x33FF2A42),
+                                                            border = BorderStroke(1.dp, accentRed.copy(alpha = 0.6f))
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("🔥", fontSize = 11.sp)
+                                                                Spacer(modifier = Modifier.width(2.dp))
+                                                                Text(
+                                                                    text = "$dailyStreak gg",
+                                                                    color = Color.White,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 11.sp
+                                                                )
+                                                            }
+                                                        }
+
+                                                        // Quick Search Icon
+                                                        IconButton(
+                                                            onClick = { showQuickJumpDialog = true },
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.White.copy(alpha = 0.10f))
+                                                        ) {
+                                                            Icon(Icons.Default.Search, contentDescription = "Cerca", tint = Color.White, modifier = Modifier.size(18.dp))
                                                         }
                                                     }
                                                 }
@@ -1034,7 +1108,7 @@ class MainActivity : ComponentActivity() {
                                                         border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.40f))
                                                     ) {
                                                         Text(
-                                                            text = "${"%.1f".format(percentageWatched)}% Completato",
+                                                            text = "${"%.2f".format(percentageWatched)}% Completato",
                                                             color = goldAccent,
                                                             fontSize = 11.sp,
                                                             fontWeight = FontWeight.Black,
@@ -1118,7 +1192,7 @@ class MainActivity : ComponentActivity() {
                                                                 Column(modifier = Modifier.padding(12.dp)) {
                                                                     Text("Ritmo di Visione", color = Color.Gray, fontSize = 11.sp)
                                                                     Spacer(modifier = Modifier.height(4.dp))
-                                                                    Text("${"%.1f".format(stats.first)} ep/gg", color = Color(0xFF34C759), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                                    Text("${"%.2f".format(stats.first)} ep/gg", color = Color(0xFF34C759), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                                                     Text("media calcolata", color = Color.Gray, fontSize = 10.sp)
                                                                 }
                                                             }
@@ -1191,7 +1265,13 @@ class MainActivity : ComponentActivity() {
                                                         modifier = Modifier
                                                             .weight(0.9f)
                                                             .iosSpringClick {
-                                                                val json = OnePieceHelper.exportToJson(watchedEpisodes, currentEpisodeNumber, savedPosition)
+                                                                val json = OnePieceHelper.exportToJson(
+                                                                    watched = watchedEpisodes,
+                                                                    favorites = favoriteEpisodes,
+                                                                    lastEp = currentEpisodeNumber,
+                                                                    lastPos = savedPosition,
+                                                                    streak = dailyStreak
+                                                                )
                                                                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                                 val clip = android.content.ClipData.newPlainText("OP_Backup", json)
                                                                 clipboard.setPrimaryClip(clip)
@@ -1232,40 +1312,47 @@ class MainActivity : ComponentActivity() {
 
                                                 Spacer(modifier = Modifier.height(20.dp))
 
-                                                // 3D FILTER CHIPS BAR (Smooth horizontal scroll)
+                                                // COMPACT COLORED FILTER CHIPS (Clean, No Emojis, 120Hz smooth)
+                                                data class FilterOption(val label: String, val activeColor: Color, val tagColor: Color)
+                                                val filterOptions = listOf(
+                                                    FilterOption("Tutti ${OnePieceHelper.TOTAL_AIRING_EPISODES}", accentRed, Color.White),
+                                                    FilterOption("Visti ${watchedEpisodes.size}", Color(0xFF34C759), Color(0xFF34C759)),
+                                                    FilterOption("Da vedere ${OnePieceHelper.TOTAL_AIRING_EPISODES - watchedEpisodes.size}", Color(0xFFFF9500), Color(0xFFFF9500)),
+                                                    FilterOption("Preferiti ${favoriteEpisodes.size}", goldAccent, goldAccent),
+                                                    FilterOption("Canon", Color(0xFF2ECC71), Color(0xFF2ECC71)),
+                                                    FilterOption("Filler", Color(0xFFE74C3C), Color(0xFFE74C3C)),
+                                                    FilterOption("Mixed", Color(0xFF9B59B6), Color(0xFF9B59B6)),
+                                                    FilterOption("Anime Filler", Color(0xFF3498DB), Color(0xFF3498DB))
+                                                )
+
                                                 LazyRow(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                     modifier = Modifier.fillMaxWidth()
                                                 ) {
-                                                    val filters = listOf(
-                                                        "Tutti (${OnePieceHelper.TOTAL_AIRING_EPISODES})",
-                                                        "Visti (${watchedEpisodes.size}) ✅",
-                                                        "Da Vedere (${OnePieceHelper.TOTAL_AIRING_EPISODES - watchedEpisodes.size}) ⏳",
-                                                        "Preferiti (${favoriteEpisodes.size}) ⭐",
-                                                        "Solo Canon 🟢",
-                                                        "Filler 🔴"
-                                                    )
-
-                                                    items(filters.indices.toList()) { i ->
+                                                    items(filterOptions.indices.toList()) { i ->
+                                                        val option = filterOptions[i]
                                                         val isSelected = filterSelection == i
                                                         Surface(
-                                                            shape = RoundedCornerShape(14.dp),
-                                                            color = if (isSelected) accentRed else Color.White.copy(alpha = 0.07f),
-                                                            border = if (isSelected) BorderStroke(1.dp, accentRed) else BorderStroke(1.dp, specularBorder),
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = if (isSelected) option.activeColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
+                                                            border = BorderStroke(
+                                                                1.dp,
+                                                                if (isSelected) option.activeColor else option.tagColor.copy(alpha = 0.25f)
+                                                            ),
                                                             modifier = Modifier.iosSpringClick { filterSelection = i }
                                                         ) {
                                                             Text(
-                                                                text = filters[i],
-                                                                color = if (isSelected) Color.White else Color.LightGray,
+                                                                text = option.label,
+                                                                color = if (isSelected) option.activeColor else Color.LightGray,
                                                                 fontSize = 11.sp,
-                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                                             )
                                                         }
                                                     }
                                                 }
 
-                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Spacer(modifier = Modifier.height(14.dp))
                                             }
 
                                             // SAGAS 3D ACCORDION
@@ -1277,28 +1364,22 @@ class MainActivity : ComponentActivity() {
                                                 var isExpanded by remember { mutableStateOf(false) }
                                                 val arrowRotation by animateFloatAsState(
                                                     targetValue = if (isExpanded) 180f else 0f,
-                                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                                                     label = "arrowRot"
                                                 )
 
                                                 Surface(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .padding(vertical = 5.dp)
-                                                        .animateContentSize(
-                                                            animationSpec = spring(
-                                                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                                                stiffness = Spring.StiffnessMediumLow
-                                                            )
-                                                        ),
-                                                    shape = RoundedCornerShape(22.dp),
+                                                        .padding(vertical = 5.dp),
+                                                    shape = RoundedCornerShape(20.dp),
                                                     color = Color(0xF2161622),
                                                     border = if (isCompleted) {
                                                         BorderStroke(1.2.dp, Color(0xFF34C759).copy(alpha = 0.60f))
                                                     } else {
                                                         BorderStroke(1.dp, specularBorder)
                                                     },
-                                                    shadowElevation = 8.dp
+                                                    shadowElevation = 4.dp
                                                 ) {
                                                     Column(modifier = Modifier.padding(16.dp)) {
                                                         Row(
@@ -1350,54 +1431,61 @@ class MainActivity : ComponentActivity() {
                                                             trackColor = Color.White.copy(alpha = 0.10f)
                                                         )
 
-                                                        if (isExpanded) {
-                                                            Spacer(modifier = Modifier.height(14.dp))
-                                                            HorizontalDivider(color = Color.White.copy(alpha = 0.10f))
-                                                            Spacer(modifier = Modifier.height(10.dp))
+                                                        AnimatedVisibility(
+                                                            visible = isExpanded,
+                                                            enter = fadeIn(tween(180)) + expandVertically(tween(220, easing = FastOutSlowInEasing)),
+                                                            exit = fadeOut(tween(140)) + shrinkVertically(tween(200, easing = FastOutSlowInEasing))
+                                                        ) {
+                                                            Column {
+                                                                Spacer(modifier = Modifier.height(14.dp))
+                                                                HorizontalDivider(color = Color.White.copy(alpha = 0.10f))
+                                                                Spacer(modifier = Modifier.height(10.dp))
 
-                                                            // Quick Action: Mark whole saga
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.End
-                                                            ) {
-                                                                Surface(
-                                                                    shape = RoundedCornerShape(10.dp),
-                                                                    color = Color.White.copy(alpha = 0.08f),
-                                                                    border = BorderStroke(1.dp, specularBorder),
-                                                                    modifier = Modifier.iosSpringClick {
-                                                                        val markAll = !isCompleted
-                                                                        saga.range.forEach { prefs.markEpisodeWatched(it, markAll) }
-                                                                        watchedEpisodes = prefs.getWatchedEpisodes()
-                                                                        Toast.makeText(
-                                                                            this@MainActivity,
-                                                                            if (markAll) "Saga ${saga.name} completata! ✅" else "Saga azzerata",
-                                                                            Toast.LENGTH_SHORT
-                                                                        ).show()
-                                                                    }
+                                                                // Quick Action: Mark whole saga
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.End
                                                                 ) {
-                                                                    Text(
-                                                                        text = if (isCompleted) "Deseleziona tutta la saga" else "Segna tutta la saga come vista ✅",
-                                                                        color = if (isCompleted) Color.Gray else Color(0xFF34C759),
-                                                                        fontSize = 11.sp,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                                                    )
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(10.dp),
+                                                                        color = Color.White.copy(alpha = 0.08f),
+                                                                        border = BorderStroke(1.dp, specularBorder),
+                                                                        modifier = Modifier.iosSpringClick {
+                                                                            val markAll = !isCompleted
+                                                                            saga.range.forEach { prefs.markEpisodeWatched(it, markAll) }
+                                                                            watchedEpisodes = prefs.getWatchedEpisodes()
+                                                                            Toast.makeText(
+                                                                                this@MainActivity,
+                                                                                if (markAll) "Saga ${saga.name} completata! ✅" else "Saga azzerata",
+                                                                                Toast.LENGTH_SHORT
+                                                                            ).show()
+                                                                        }
+                                                                    ) {
+                                                                        Text(
+                                                                            text = if (isCompleted) "Deseleziona tutta la saga" else "Segna tutta la saga come vista ✅",
+                                                                            color = if (isCompleted) Color.Gray else Color(0xFF34C759),
+                                                                            fontSize = 11.sp,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                                                        )
+                                                                    }
                                                                 }
-                                                            }
 
-                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                                Spacer(modifier = Modifier.height(8.dp))
 
-                                                            val filteredEpisodes = saga.range.filter { ep ->
-                                                                val t = OnePieceHelper.getEpisodeType(ep)
-                                                                when (filterSelection) {
-                                                                    1 -> watchedEpisodes.contains(ep)
-                                                                    2 -> !watchedEpisodes.contains(ep)
-                                                                    3 -> favoriteEpisodes.contains(ep)
-                                                                    4 -> t == EpisodeType.MANGA_CANON || t == EpisodeType.ANIME_CANON
-                                                                    5 -> t == EpisodeType.FILLER
-                                                                    else -> true
+                                                                val filteredEpisodes = saga.range.filter { ep ->
+                                                                    val t = OnePieceHelper.getEpisodeType(ep)
+                                                                    when (filterSelection) {
+                                                                        1 -> watchedEpisodes.contains(ep)
+                                                                        2 -> !watchedEpisodes.contains(ep)
+                                                                        3 -> favoriteEpisodes.contains(ep)
+                                                                        4 -> t == EpisodeType.MANGA_CANON
+                                                                        5 -> t == EpisodeType.FILLER
+                                                                        6 -> t == EpisodeType.MIXED
+                                                                        7 -> t == EpisodeType.ANIME_CANON
+                                                                        else -> true
+                                                                    }
                                                                 }
-                                                            }
 
                                                             if (filteredEpisodes.isEmpty()) {
                                                                 Text("Nessun episodio corrisponde al filtro attivo", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
@@ -1472,6 +1560,7 @@ class MainActivity : ComponentActivity() {
                                                                 }
                                                             }
                                                         }
+                                                    }
                                                     }
                                                 }
                                             }
@@ -2110,16 +2199,22 @@ class MainActivity : ComponentActivity() {
 
                                                 Button(
                                                     onClick = {
-                                                        val res = OnePieceHelper.importFromJson(importInputText)
-                                                        if (res != null) {
-                                                            res.first.forEach { prefs.markEpisodeWatched(it, true) }
-                                                            currentEpisodeNumber = res.second
-                                                            val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, res.second)
+                                                        val backupData = OnePieceHelper.importFromJson(importInputText)
+                                                        if (backupData != null) {
+                                                            backupData.watchedEpisodes.forEach { prefs.markEpisodeWatched(it, true) }
+                                                            backupData.favoriteEpisodes.forEach { prefs.toggleFavorite(it) }
+                                                            currentEpisodeNumber = backupData.lastEpisode
+                                                            val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, backupData.lastEpisode)
                                                             currentWebUrl = epUrl
-                                                            prefs.saveLastPlayback(epUrl, res.second, res.third)
+                                                            prefs.saveLastPlayback(epUrl, backupData.lastEpisode, backupData.lastPositionMs)
                                                             watchedEpisodes = prefs.getWatchedEpisodes()
+                                                            favoriteEpisodes = prefs.getFavoriteEpisodes()
+                                                            if (backupData.dailyStreak > 0) {
+                                                                prefs.saveDailyStreak(backupData.dailyStreak, backupData.lastWatchDate)
+                                                                dailyStreak = backupData.dailyStreak
+                                                            }
                                                             webViewInstance?.loadUrl(epUrl)
-                                                            Toast.makeText(this@MainActivity, "Dati ripristinati con successo!", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(this@MainActivity, "Backup ripristinato con successo!", Toast.LENGTH_SHORT).show()
                                                             showImportDialog = false
                                                         } else {
                                                             Toast.makeText(this@MainActivity, "Formato JSON non valido", Toast.LENGTH_SHORT).show()
