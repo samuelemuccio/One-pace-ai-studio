@@ -6,44 +6,80 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   ai-agent:
     runs-on: ubuntu-latest
 
-    # Attiva solo su commenti nelle issue (non nelle PR) che contengono /ai
     if: >
-      github.event.issue.pull_request == null &&
-      contains(github.event.comment.body, '/ai')
-
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.issue.pull_request == null &&
+        contains(github.event.comment.body, '/ai')
+      )
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configura variabili ambiente per Azure OpenAI
+      - name: Chiama Azure OpenAI (GPT-5.6-SOL) - test connessione
+        id: call_azure
         run: |
-          echo "OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}" >> $GITHUB_ENV
-          echo "OPENAI_BASE_URL=${{ secrets.AZURE_OPENAI_BASE_URL }}" >> $GITHUB_ENV
-          echo "OPENAI_MODEL=${{ secrets.AZURE_OPENAI_MODEL }}" >> $GITHUB_ENV
-
-      - name: Installa un agente OpenAI-compatible (es. Codex CLI)
-        run: |
-          # Se preferisci un altro agente, cambia questa riga
-          npm install -g @openai/codex
-
-      - name: Esegui agente sul repository
+          RESPONSE=$(curl -s -X POST "${AZURE_OPENAI_BASE_URL}responses" \
+            -H "Content-Type: application/json" \
+            -H "api-key: ${AZURE_OPENAI_API_KEY}" \
+            -d '{
+                  "model": "'"${AZURE_OPENAI_MODEL}"'",
+                  "input": "Rispondi con una sola frase: la connessione funziona correttamente."
+                }')
+          echo "$RESPONSE" > azure_response.json
+          echo "RISPOSTA GREZZA:"
+          cat azure_response.json
         env:
-          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ env.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ env.OPENAI_MODEL }}
-        run: |
-          # Leggi il commento che ha attivato il workflow
-          COMMENT="${{ github.event.comment.body }}"
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
+          AZURE_OPENAI_MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
 
-          # Esegui l'agente con un prompt generico; puoi personalizzarlo
-          codex \
-            --prompt "Analizza questo repository APK. Proponi e implementa miglioramenti concreti su: struttura del progetto, naming, gestione errori e leggibilità del codice. Crea una pull request con tutte le modifiche necessarie." \
-            --repo .
+      - name: Estrai testo risposta
+        id: extract
+        run: |
+          TEXT=$(cat azure_response.json | python3 -c "
+import json,sys
+try:
+    data = json.load(sys.stdin)
+    text = ''
+    if 'output' in data:
+        for item in data['output']:
+            if 'content' in item:
+                for c in item['content']:
+                    if 'text' in c:
+                        text += c['text']
+    elif 'output_text' in data:
+        text = data['output_text']
+    else:
+        text = json.dumps(data)[:500]
+    print(text)
+except Exception as e:
+    print('Errore nel leggere la risposta: ' + str(e))
+")
+          echo "testo<<EOF" >> $GITHUB_OUTPUT
+          echo "$TEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Commenta sull'issue con il risultato
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const testo = `${{ steps.extract.outputs.testo }}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: "Risposta da GPT-5.6-SOL:
+
+" + testo
+            });
