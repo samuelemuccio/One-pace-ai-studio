@@ -1,11 +1,48 @@
-name: Test semplice Actions
+name: Test Azure GPT-5.6-SOL
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  azure-test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Test riuscito
-        run: echo "ACTIONS FUNZIONA"
+      - name: Verifica i secret
+        env:
+          API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
+          MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "ERRORE: manca il secret AZURE_OPENAI_API_KEY"
+            exit 1
+          fi
+
+          if [ -z "$BASE_URL" ]; then
+            echo "ERRORE: manca il secret AZURE_OPENAI_BASE_URL"
+            exit 1
+          fi
+
+          if [ -z "$MODEL" ]; then
+            echo "ERRORE: manca il secret AZURE_OPENAI_MODEL"
+            exit 1
+          fi
+
+          echo "OK: i 3 secret sono presenti."
+          echo "Endpoint: $BASE_URL"
+          echo "Modello: $MODEL"
+
+      - name: Invia test a Azure
+        env:
+          API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
+          MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
+        run: |
+          URL="${BASE_URL%/}/responses"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST "$URL" \
+            --header "Content-Type: application/json" \
+            --header "api-key: $API_KEY" \
+            --data "{"model":"$MODEL","input":"Rispondi soltanto CONNESSIONE OK"}"
