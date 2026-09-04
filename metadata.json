@@ -1,0 +1,8 @@
+{
+  "name": "OP Stream",
+  "description": "One Piece anime browser and video streaming player",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
