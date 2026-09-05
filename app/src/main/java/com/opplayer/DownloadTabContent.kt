@@ -60,6 +60,8 @@ fun DownloadTabContent(
     val goldAccent = Color(0xFFFFD700)
     val successGreen = Color(0xFF34C759)
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -69,7 +71,7 @@ fun DownloadTabContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 18.dp),
-            contentPadding = PaddingValues(top = 18.dp, bottom = 120.dp)
+            contentPadding = PaddingValues(top = statusBarTop + 14.dp, bottom = 120.dp)
         ) {
             // Header con titolo e pulsante Impostazioni
             item {
@@ -78,7 +80,11 @@ fun DownloadTabContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(end = 12.dp)
+                    ) {
                         Text(
                             text = "OFFLINE VAULT",
                             color = accentRed,
@@ -223,7 +229,7 @@ fun DownloadTabContent(
                             Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isBatchDownloading) "Preparazione download..." else "📥 Scarica Prossimi 3 Episodi ($selectedQuality)",
+                                text = if (isBatchDownloading) "Preparazione download..." else "Scarica Prossimi 3 Episodi ($selectedQuality)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.White
