@@ -33,7 +33,8 @@ fun DownloadTabContent(
     prefs: PlaybackPreferences,
     currentEpisodeNumber: Int,
     watchedEpisodes: Set<Int>,
-    onPlayOfflineEpisode: (filePath: String, episodeNumber: Int) -> Unit
+    onPlayOfflineEpisode: (filePath: String, episodeNumber: Int) -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -68,23 +69,48 @@ fun DownloadTabContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 18.dp),
-            contentPadding = PaddingValues(top = 18.dp, bottom = 32.dp)
+            contentPadding = PaddingValues(top = 18.dp, bottom = 120.dp)
         ) {
-            // Header
+            // Header con titolo e pulsante Impostazioni
             item {
-                Text(
-                    text = "OFFLINE VAULT",
-                    color = accentRed,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp
-                )
-                Text(
-                    text = "Gestione Download",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "OFFLINE VAULT",
+                            color = accentRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = "Gestione Download",
+                            color = Color.White,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.10f))
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Impostazioni",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "File multimediali memorizzati in locale per la visione senza internet",
                     color = Color.Gray,
@@ -263,18 +289,28 @@ fun DownloadTabContent(
                                         fontSize = 15.sp
                                     )
                                     Text(
-                                        text = "${download.statusText} • ${download.bytesDownloadedMb} di ${download.totalBytesMb}",
-                                        color = Color.Gray,
-                                        fontSize = 12.sp
+                                        text = download.statusText,
+                                        color = Color(0xFF32ADE6),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
 
-                                Text(
-                                    text = "${download.progressPercent}%",
-                                    color = accentRed,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "${download.progressPercent}%",
+                                        color = accentRed,
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    if (download.remainingMb.isNotEmpty()) {
+                                        Text(
+                                            text = download.remainingMb,
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -293,8 +329,15 @@ fun DownloadTabContent(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text(
+                                    text = "${download.bytesDownloadedMb} / ${download.totalBytesMb}",
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+
                                 OutlinedButton(
                                     onClick = {
                                         downloadManagerHelper.cancelOrDeleteDownload(download.episodeNumber, download.downloadId)

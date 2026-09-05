@@ -29,11 +29,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,6 +48,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,7 +60,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -111,6 +112,72 @@ fun Modifier.iosSpringClick(onClick: () -> Unit): Modifier = composed {
             indication = null,
             onClick = onClick
         )
+}
+
+@Composable
+fun AnimatedStreakBadge(
+    streak: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "streakFlame")
+    val flameScale by infiniteTransition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flameScale"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0x33FF3B30),
+        border = BorderStroke(
+            1.dp,
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFFFF3B30).copy(alpha = glowAlpha),
+                    Color(0xFFFF9500).copy(alpha = glowAlpha)
+                )
+            )
+        ),
+        modifier = modifier.iosSpringClick(onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocalFireDepartment,
+                contentDescription = "Streak attiva",
+                tint = Color(0xFFFF3B30),
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer {
+                        scaleX = flameScale
+                        scaleY = flameScale
+                    }
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "$streak ${if (streak == 1) "giorno" else "gg"}",
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 11.sp
+            )
+        }
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -258,13 +325,13 @@ class MainActivity : ComponentActivity() {
                 var isPlayerAdvancingNext by remember { mutableStateOf(false) }
 
                 var currentTab by remember { mutableIntStateOf(0) }
+                var isBrowserOpen by remember { mutableStateOf(false) }
                 var watchedEpisodes by remember { mutableStateOf(prefs.getWatchedEpisodes()) }
                 var favoriteEpisodes by remember { mutableStateOf(prefs.getFavoriteEpisodes()) }
                 var downloadedList by remember { mutableStateOf(getDownloadedFilesList()) }
 
                 // Gamification & Rotta State
                 var dailyStreak by remember { mutableIntStateOf(prefs.getStreak()) }
-                val bountyBeli by remember(watchedEpisodes) { derivedStateOf { OnePieceHelper.calculateBounty(watchedEpisodes.size) } }
                 val pirateRank by remember(watchedEpisodes) { derivedStateOf { OnePieceHelper.getPirateRank(watchedEpisodes.size) } }
                 var selectedSagaIndex by remember {
                     mutableIntStateOf(
@@ -279,10 +346,8 @@ class MainActivity : ComponentActivity() {
                 var selectedEpisodeForDetail by remember { mutableStateOf<Int?>(null) }
                 var showQuickJumpDialog by remember { mutableStateOf(false) }
                 var quickJumpInput by remember { mutableStateOf("") }
-                var showMarkUpToConfirmDialog by remember { mutableStateOf(false) }
                 var showClearHistoryConfirmDialog by remember { mutableStateOf(false) }
                 var showStreakReminderDialog by remember { mutableStateOf(false) }
-                var showBountyExplainDialog by remember { mutableStateOf(false) }
                 var showCloudSyncDialog by remember { mutableStateOf(false) }
                 var showSettingsDialog by remember { mutableStateOf(false) }
                 val downloadManagerHelper = remember { DownloadManagerHelper(this@MainActivity) }
@@ -389,11 +454,15 @@ class MainActivity : ComponentActivity() {
                         showImportDialog -> {
                             showImportDialog = false
                         }
-                        showMarkUpToConfirmDialog -> {
-                            showMarkUpToConfirmDialog = false
-                        }
                         showClearHistoryConfirmDialog -> {
                             showClearHistoryConfirmDialog = false
+                        }
+                        isBrowserOpen -> {
+                            if (webViewInstance?.canGoBack() == true) {
+                                webViewInstance?.goBack()
+                            } else {
+                                isBrowserOpen = false
+                            }
                         }
                         currentTab != 0 -> {
                             currentTab = 0
@@ -474,145 +543,11 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     containerColor = Color(0xFF070709),
-                    bottomBar = {
-                        if (activeVideoUrl == null) {
-                            // PREMIUM FROSTED GLASS DOCK (Squircle Apple-style, fluid sliding indicator)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .padding(horizontal = 20.dp, vertical = 10.dp)
-                            ) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(28.dp),
-                                    color = Color(0xD80E1220),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.White.copy(alpha = 0.32f),
-                                                Color.White.copy(alpha = 0.08f)
-                                            )
-                                        )
-                                    ),
-                                    shadowElevation = 24.dp
-                                ) {
-                                    val navItems = listOf(
-                                        Pair(Icons.Default.PlayCircle, "Cinema"),
-                                        Pair(Icons.Default.Explore, "Registro"),
-                                        Pair(Icons.Default.Language, "Sito Web"),
-                                        Pair(Icons.Default.FileDownload, "Download")
-                                    )
-
-                                    Box(modifier = Modifier.fillMaxWidth().height(62.dp)) {
-                                        // Sliding indicator pill
-                                        val pillPosition by animateFloatAsState(
-                                            targetValue = currentTab.toFloat(),
-                                            animationSpec = spring(
-                                                dampingRatio = 0.75f,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            ),
-                                            label = "pillPos"
-                                        )
-
-                                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                                            val tabWidth = maxWidth / navItems.size
-                                            Box(
-                                                modifier = Modifier
-                                                    .offset(x = tabWidth * pillPosition)
-                                                    .width(tabWidth)
-                                                    .fillMaxHeight()
-                                                    .padding(horizontal = 6.dp, vertical = 6.dp)
-                                                    .clip(RoundedCornerShape(22.dp))
-                                                    .background(
-                                                        Brush.verticalGradient(
-                                                            listOf(
-                                                                accentRed.copy(alpha = 0.38f),
-                                                                accentRed.copy(alpha = 0.15f)
-                                                            )
-                                                        )
-                                                    )
-                                                    .border(
-                                                        width = 1.dp,
-                                                        brush = Brush.verticalGradient(
-                                                            listOf(
-                                                                accentRed.copy(alpha = 0.90f),
-                                                                accentRed.copy(alpha = 0.25f)
-                                                            )
-                                                        ),
-                                                        shape = RoundedCornerShape(22.dp)
-                                                    )
-                                            )
-                                        }
-
-                                        Row(
-                                            modifier = Modifier.fillMaxSize(),
-                                            horizontalArrangement = Arrangement.SpaceAround,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            navItems.forEachIndexed { idx, (icon, label) ->
-                                                val isSelected = currentTab == idx
-
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxHeight()
-                                                        .iosSpringClick {
-                                                            if (idx == 1) {
-                                                                watchedEpisodes = prefs.getWatchedEpisodes()
-                                                                favoriteEpisodes = prefs.getFavoriteEpisodes()
-                                                            }
-                                                            if (idx == 3) downloadedList = getDownloadedFilesList()
-                                                            currentTab = idx
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center
-                                                    ) {
-                                                        Box(contentAlignment = Alignment.TopEnd) {
-                                                            Icon(
-                                                                imageVector = icon,
-                                                                contentDescription = label,
-                                                                tint = if (isSelected) Color.White else Color(0xFF8E8E93),
-                                                                modifier = Modifier.size(if (isSelected) 26.dp else 22.dp)
-                                                            )
-                                                            if (idx == 3 && downloadedList.isNotEmpty()) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .offset(x = 6.dp, y = (-4).dp)
-                                                                        .size(8.dp)
-                                                                        .clip(CircleShape)
-                                                                        .background(accentRed)
-                                                                )
-                                                            }
-                                                        }
-
-                                                        if (isSelected) {
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(4.dp)
-                                                                    .clip(CircleShape)
-                                                                    .background(accentRed)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ) { innerPadding ->
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                ) { _ ->
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(innerPadding)
                             .background(Color(0xFF070709))
                     ) {
                         // Background WebView for scraping & video detection
@@ -629,7 +564,6 @@ class MainActivity : ComponentActivity() {
                                     settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                     settings.databaseEnabled = true
                                     settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-                                    setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
 
                                     webViewClient = object : WebViewClient() {
                                         override fun onPageFinished(view: WebView?, url: String?) {
@@ -706,19 +640,26 @@ class MainActivity : ComponentActivity() {
                                     webViewInstance = this
                                 }
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = if (isBrowserOpen) {
+                                Modifier
+                                    .fillMaxSize()
+                                    .statusBarsPadding()
+                                    .padding(top = 56.dp)
+                                    .navigationBarsPadding()
+                            } else {
+                                Modifier.fillMaxSize()
+                            }
                         )
 
-                        if (currentTab != 2) {
+                        if (!isBrowserOpen) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(Color(0xFF070709))
                             )
-                        }
 
-                        // FLUID TAB TRANSITIONS
-                        AnimatedContent(
+                            // FLUID TAB TRANSITIONS
+                            AnimatedContent(
                             targetState = currentTab,
                             transitionSpec = {
                                 if (targetState > initialState) {
@@ -761,7 +702,12 @@ class MainActivity : ComponentActivity() {
                                     val isHeroFavorited = favoriteEpisodes.contains(currentEpisodeNumber)
 
                                     val upcomingEpisodes = remember(sagaEpisodes, currentEpisodeNumber) {
-                                        sagaEpisodes.filter { it >= currentEpisodeNumber }.take(12)
+                                        val nextInSaga = sagaEpisodes.filter { it > currentEpisodeNumber }
+                                        if (nextInSaga.isNotEmpty()) {
+                                            nextInSaga.take(12)
+                                        } else {
+                                            ((currentEpisodeNumber + 1)..minOf(currentEpisodeNumber + 12, OnePieceHelper.TOTAL_AIRING_EPISODES)).toList()
+                                        }
                                     }
 
                                     LaunchedEffect(targetIndex) {
@@ -786,7 +732,7 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .padding(horizontal = 18.dp),
-                                            contentPadding = PaddingValues(top = 18.dp, bottom = 28.dp)
+                                            contentPadding = PaddingValues(top = 18.dp, bottom = 120.dp)
                                         ) {
                                             item {
                                                 // Header with Bounty, Streak & Quick Jump button
@@ -815,72 +761,32 @@ class MainActivity : ComponentActivity() {
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
-                                                        // Bounty Beli Badge (Click to open Bounty & Bar explanation)
-                                                        Surface(
-                                                            shape = RoundedCornerShape(16.dp),
-                                                            color = Color(0x33FFD700),
-                                                            border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.5f)),
-                                                            modifier = Modifier.iosSpringClick { showBountyExplainDialog = true }
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Text("฿", color = goldAccent, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                                                                Spacer(modifier = Modifier.width(3.dp))
-                                                                Text(
-                                                                    text = OnePieceHelper.formatBeli(bountyBeli.first),
-                                                                    color = Color.White,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    fontSize = 11.sp
-                                                                )
-                                                            }
-                                                        }
+                                                        // Animated Flame Streak Badge
+                                                        AnimatedStreakBadge(
+                                                            streak = dailyStreak,
+                                                            onClick = { showStreakReminderDialog = true }
+                                                        )
 
-                                                        // Streak Badge (Click to configure streak notification reminder)
-                                                        Surface(
-                                                            shape = RoundedCornerShape(16.dp),
-                                                            color = Color(0x33FF2A42),
-                                                            border = BorderStroke(1.dp, accentRed.copy(alpha = 0.6f)),
-                                                            modifier = Modifier.iosSpringClick {
-                                                                showStreakReminderDialog = true
-                                                            }
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Text("🔥", fontSize = 11.sp)
-                                                                Spacer(modifier = Modifier.width(2.dp))
-                                                                Text(
-                                                                    text = "$dailyStreak gg",
-                                                                    color = Color.White,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    fontSize = 11.sp
-                                                                )
-                                                            }
-                                                        }
-
-                                                        // Quick Search Icon
+                                                        // Quick Search Button (Symmetrical 34dp Circle)
                                                         IconButton(
                                                             onClick = { showQuickJumpDialog = true },
                                                             modifier = Modifier
-                                                                .size(36.dp)
+                                                                .size(34.dp)
                                                                 .clip(CircleShape)
                                                                 .background(Color.White.copy(alpha = 0.10f))
                                                         ) {
-                                                            Icon(Icons.Default.Search, contentDescription = "Cerca", tint = Color.White, modifier = Modifier.size(18.dp))
+                                                            Icon(Icons.Default.Search, contentDescription = "Cerca Episodio", tint = Color.White, modifier = Modifier.size(18.dp))
                                                         }
 
-                                                        // Settings Gear Icon (Cloud, Qualità Download, Notifiche, Backup)
+                                                        // In-App Browser Icon (Sito Web One Piece Power)
                                                         IconButton(
-                                                            onClick = { showSettingsDialog = true },
+                                                            onClick = { isBrowserOpen = true },
                                                             modifier = Modifier
-                                                                .size(36.dp)
+                                                                .size(34.dp)
                                                                 .clip(CircleShape)
                                                                 .background(Color.White.copy(alpha = 0.10f))
                                                         ) {
-                                                            Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(18.dp))
+                                                            Icon(Icons.Default.Language, contentDescription = "Sito Web Browser", tint = Color.White, modifier = Modifier.size(18.dp))
                                                         }
                                                     }
                                                 }
@@ -939,13 +845,13 @@ class MainActivity : ComponentActivity() {
                                                                         Toast.LENGTH_SHORT
                                                                     ).show()
                                                                 },
-                                                                modifier = Modifier.size(34.dp)
+                                                                modifier = Modifier.size(48.dp)
                                                             ) {
                                                                 Icon(
                                                                     imageVector = if (isHeroFavorited) Icons.Default.Star else Icons.Default.StarBorder,
                                                                     contentDescription = "Preferito",
                                                                     tint = if (isHeroFavorited) goldAccent else Color.Gray,
-                                                                    modifier = Modifier.size(22.dp)
+                                                                    modifier = Modifier.size(24.dp)
                                                                 )
                                                             }
                                                         }
@@ -966,37 +872,64 @@ class MainActivity : ComponentActivity() {
 
                                                         Spacer(modifier = Modifier.height(18.dp))
 
-                                                        // Play button with Crimson Red glow
-                                                        Surface(
-                                                            shape = RoundedCornerShape(18.dp),
-                                                            color = Color.Transparent,
-                                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.40f)),
-                                                            shadowElevation = 12.dp,
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .background(
-                                                                    Brush.horizontalGradient(
-                                                                        listOf(
-                                                                            Color(0xFFFF2D55),
-                                                                            Color(0xFFE50914)
-                                                                        )
-                                                                    ),
-                                                                    shape = RoundedCornerShape(18.dp)
-                                                                )
+                                                        // Action Row: Play + Direct Offline Download
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Row(
-                                                                modifier = Modifier.padding(vertical = 15.dp),
-                                                                horizontalArrangement = Arrangement.Center,
-                                                                verticalAlignment = Alignment.CenterVertically
+                                                            Surface(
+                                                                shape = RoundedCornerShape(18.dp),
+                                                                color = accentRed,
+                                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                                                                shadowElevation = 10.dp,
+                                                                modifier = Modifier
+                                                                    .weight(1f)
+                                                                    .iosSpringClick {
+                                                                        playEpisode(currentEpisodeNumber, savedPosition)
+                                                                    }
                                                             ) {
-                                                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                                                                Spacer(modifier = Modifier.width(8.dp))
-                                                                Text(
-                                                                    text = if (savedPosition > 10_000L) "Riprendi da ${formatTime(savedPosition)}" else "Guarda Adesso",
-                                                                    color = Color.White,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    fontSize = 16.sp
-                                                                )
+                                                                Row(
+                                                                    modifier = Modifier.padding(vertical = 15.dp),
+                                                                    horizontalArrangement = Arrangement.Center,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Text(
+                                                                        text = if (savedPosition > 10_000L) "Riprendi ${formatTime(savedPosition)}" else "Guarda Adesso",
+                                                                        color = Color.White,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 15.sp
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            // Quick Direct Download Button (Icon only)
+                                                            Surface(
+                                                                shape = RoundedCornerShape(18.dp),
+                                                                color = Color.White.copy(alpha = 0.08f),
+                                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                                                                modifier = Modifier
+                                                                    .size(54.dp)
+                                                                    .iosSpringClick {
+                                                                        val preferredQuality = prefs.getPreferredDownloadQuality()
+                                                                        coroutineScope.launch {
+                                                                            downloadManagerHelper.startDownloadForEpisode(currentEpisodeNumber, preferredQuality)
+                                                                        }
+                                                                        Toast.makeText(
+                                                                            this@MainActivity,
+                                                                            "Download Ep. $currentEpisodeNumber ($preferredQuality) avviato! 📥",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                    }
+                                                            ) {
+                                                                Box(
+                                                                    contentAlignment = Alignment.Center,
+                                                                    modifier = Modifier.fillMaxSize()
+                                                                ) {
+                                                                    Icon(Icons.Default.Download, contentDescription = "Scarica episodio", tint = Color.White, modifier = Modifier.size(22.dp))
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1024,7 +957,7 @@ class MainActivity : ComponentActivity() {
 
                                                 Spacer(modifier = Modifier.height(14.dp))
 
-                                                // Smooth Horizontal Carousel (Matching Image Design)
+                                                // Smooth Horizontal Carousel (Apple Squircle G2)
                                                 LazyRow(
                                                     state = carouselState,
                                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1037,18 +970,18 @@ class MainActivity : ComponentActivity() {
 
                                                         Surface(
                                                             shape = RoundedCornerShape(22.dp),
-                                                            color = if (isSelected) Color(0xFF1E1017) else Color(0xFF121520),
+                                                            color = if (isSelected) Color(0xFF181218) else Color(0xFF111115),
                                                             border = if (isSelected) {
-                                                                BorderStroke(2.dp, Color(0xFFFF2D55))
+                                                                BorderStroke(1.5.dp, Color(0xFFFF2A54))
                                                             } else {
-                                                                BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                                                                BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                                                             },
-                                                            shadowElevation = if (isSelected) 8.dp else 2.dp,
+                                                            shadowElevation = if (isSelected) 10.dp else 0.dp,
                                                             modifier = Modifier
-                                                                .width(122.dp)
-                                                                .height(146.dp)
+                                                                .width(120.dp)
+                                                                .height(142.dp)
                                                                 .iosSpringClick {
-                                                                    selectedEpisodeForDetail = ep
+                                                                    playEpisode(ep)
                                                                 }
                                                         ) {
                                                             Column(
@@ -1057,7 +990,7 @@ class MainActivity : ComponentActivity() {
                                                                     .padding(12.dp),
                                                                 verticalArrangement = Arrangement.SpaceBetween
                                                             ) {
-                                                                // Top Row: Tag pill with icon + checkmark if watched
+                                                                // Top Row: Tag pill with icon + status indicator
                                                                 Row(
                                                                     modifier = Modifier.fillMaxWidth(),
                                                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1088,7 +1021,8 @@ class MainActivity : ComponentActivity() {
                                                                         }
                                                                     }
 
-                                                                    if (isWatched) {
+                                                                    // Only show watched checkmark if not actively in progress (prevents state contradiction)
+                                                                    if (isWatched && !isSelected) {
                                                                         Surface(
                                                                             shape = CircleShape,
                                                                             color = Color(0xFF30D15B).copy(alpha = 0.22f),
@@ -1108,7 +1042,7 @@ class MainActivity : ComponentActivity() {
                                                                     }
                                                                 }
 
-                                                                // Center: Big Bold Episode Number
+                                                                // Center: Big Bold Episode Number (No redundant "Ep." below)
                                                                 Box(
                                                                     modifier = Modifier.fillMaxWidth(),
                                                                     contentAlignment = Alignment.CenterStart
@@ -1116,18 +1050,18 @@ class MainActivity : ComponentActivity() {
                                                                     Text(
                                                                         text = "$ep",
                                                                         color = Color.White,
-                                                                        fontSize = 32.sp,
+                                                                        fontSize = 34.sp,
                                                                         fontWeight = FontWeight.Black,
                                                                         letterSpacing = (-0.5).sp
                                                                     )
                                                                 }
 
-                                                                // Bottom: Active action or status
+                                                                // Bottom: Active CTA or clean status
                                                                 if (isSelected) {
                                                                     Surface(
                                                                         shape = RoundedCornerShape(10.dp),
                                                                         color = Color(0xFF280B13),
-                                                                        border = BorderStroke(1.dp, Color(0xFFFF2D55).copy(alpha = 0.70f)),
+                                                                        border = BorderStroke(1.dp, Color(0xFFFF2A54).copy(alpha = 0.70f)),
                                                                         modifier = Modifier.fillMaxWidth()
                                                                     ) {
                                                                         Row(
@@ -1135,7 +1069,7 @@ class MainActivity : ComponentActivity() {
                                                                             horizontalArrangement = Arrangement.Center,
                                                                             verticalAlignment = Alignment.CenterVertically
                                                                         ) {
-                                                                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFFFF2D55), modifier = Modifier.size(12.dp))
+                                                                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFFFF2A54), modifier = Modifier.size(12.dp))
                                                                             Spacer(modifier = Modifier.width(3.dp))
                                                                             Text(
                                                                                 text = "CONTINUA",
@@ -1147,8 +1081,8 @@ class MainActivity : ComponentActivity() {
                                                                     }
                                                                 } else {
                                                                     Text(
-                                                                        text = if (isWatched) "Visto" else "Ep. $ep",
-                                                                        color = if (isWatched) Color(0xFF30D15B) else Color.Gray,
+                                                                        text = if (isWatched) "Visto" else "",
+                                                                        color = if (isWatched) Color(0xFF30D15B) else Color.Transparent,
                                                                         fontSize = 10.sp,
                                                                         fontWeight = FontWeight.Medium
                                                                     )
@@ -1170,24 +1104,24 @@ class MainActivity : ComponentActivity() {
                                             }
 
                                             items(upcomingEpisodes) { ep ->
-                                                val isCurrent = ep == currentEpisodeNumber
                                                 val isWatched = watchedEpisodes.contains(ep)
                                                 val isFav = favoriteEpisodes.contains(ep)
                                                 val episodeType = OnePieceHelper.getEpisodeType(ep)
+                                                val epSaga = OnePieceHelper.getSagaForEpisode(ep)
 
                                                 Surface(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .padding(vertical = 4.dp),
                                                     shape = RoundedCornerShape(16.dp),
-                                                    color = if (isCurrent) Color(0x33FF2A42) else Color(0x99181822),
-                                                    border = if (isCurrent) BorderStroke(1.dp, accentRed) else BorderStroke(1.dp, specularBorder)
+                                                    color = Color(0x99121217),
+                                                    border = BorderStroke(1.dp, specularBorder)
                                                 ) {
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .iosSpringClick {
-                                                                selectedEpisodeForDetail = ep
+                                                                playEpisode(ep)
                                                             }
                                                             .padding(14.dp),
                                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1196,12 +1130,12 @@ class MainActivity : ComponentActivity() {
                                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                                             Surface(
                                                                 shape = CircleShape,
-                                                                color = if (isCurrent) accentRed else Color.White.copy(alpha = 0.10f),
+                                                                color = Color.White.copy(alpha = 0.08f),
                                                                 modifier = Modifier.size(38.dp)
                                                             ) {
                                                                 Box(contentAlignment = Alignment.Center) {
                                                                     Icon(
-                                                                        imageVector = if (isCurrent) Icons.Default.PlayArrow else Icons.Default.Movie,
+                                                                        imageVector = Icons.Default.PlayArrow,
                                                                         contentDescription = null,
                                                                         tint = Color.White,
                                                                         modifier = Modifier.size(20.dp)
@@ -1217,9 +1151,9 @@ class MainActivity : ComponentActivity() {
                                                                     fontWeight = FontWeight.Bold
                                                                 )
                                                                 Text(
-                                                                    text = if (isCurrent) "In corso di visione" else "Tocca per guardare o dettagli",
-                                                                    color = Color.Gray,
-                                                                    fontSize = 11.sp
+                                                                    text = "${epSaga.name} • 24 min",
+                                                                    color = Color(0xFFA0A0AA),
+                                                                    fontSize = 12.sp
                                                                 )
                                                             }
                                                         }
@@ -1282,15 +1216,15 @@ class MainActivity : ComponentActivity() {
                                     }
                                     var filterSelection by remember { mutableIntStateOf(0) }
 
-                                    // Dynamic Pirate Rank Title based on episodes watched
+                                    // Dynamic Pirate Rank Title based on episodes watched (Typography badge, no playful emoji)
                                     val pirateRank = remember(watchedEpisodes.size) {
                                         when (watchedEpisodes.size) {
-                                            in 0..61 -> "Mozzo dell'East Blue ⚓"
-                                            in 62..206 -> "Pirata della Rotta Maggiore 🌊"
-                                            in 207..516 -> "Supernova dei Dieci Pirati ⭐"
-                                            in 517..891 -> "Veterano del Nuovo Mondo ⚔️"
-                                            in 892..1085 -> "Grande Flotta di Cappello di Paglia 👑"
-                                            else -> "Imperatore dei Mari / Gear 5 ⚡"
+                                            in 0..61 -> "Mozzo dell'East Blue"
+                                            in 62..206 -> "Pirata della Rotta Maggiore"
+                                            in 207..516 -> "Supernova dei Pirati"
+                                            in 517..891 -> "Veterano del Nuovo Mondo"
+                                            in 892..1085 -> "Grande Flotta di Cappello di Paglia"
+                                            else -> "Imperatore dei Mari"
                                         }
                                     }
 
@@ -1309,7 +1243,7 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .padding(horizontal = 18.dp),
-                                            contentPadding = PaddingValues(top = 18.dp, bottom = 28.dp)
+                                            contentPadding = PaddingValues(top = 18.dp, bottom = 120.dp)
                                         ) {
                                             item {
                                                 Row(
@@ -1322,33 +1256,14 @@ class MainActivity : ComponentActivity() {
                                                         Text("Registro Saghe", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                                                     }
 
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    IconButton(
+                                                        onClick = { showSettingsDialog = true },
+                                                        modifier = Modifier
+                                                            .size(36.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color.White.copy(alpha = 0.10f))
                                                     ) {
-                                                        Surface(
-                                                            shape = RoundedCornerShape(12.dp),
-                                                            color = goldAccent.copy(alpha = 0.15f),
-                                                            border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.40f))
-                                                        ) {
-                                                            Text(
-                                                                text = "${"%.2f".format(percentageWatched)}% Completato",
-                                                                color = goldAccent,
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Black,
-                                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                                            )
-                                                        }
-
-                                                        IconButton(
-                                                            onClick = { showSettingsDialog = true },
-                                                            modifier = Modifier
-                                                                .size(36.dp)
-                                                                .clip(CircleShape)
-                                                                .background(Color.White.copy(alpha = 0.10f))
-                                                        ) {
-                                                            Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(18.dp))
-                                                        }
+                                                        Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(18.dp))
                                                     }
                                                 }
 
@@ -1372,25 +1287,6 @@ class MainActivity : ComponentActivity() {
                                                             Column {
                                                                 Text("Grado Navigatore:", color = Color.Gray, fontSize = 11.sp)
                                                                 Text(text = pirateRank, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-                                                            }
-
-                                                            // Bounty Beli Pill (Click for info dialog)
-                                                            Surface(
-                                                                shape = RoundedCornerShape(12.dp),
-                                                                color = Color(0x33FFD700),
-                                                                border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.5f)),
-                                                                modifier = Modifier.iosSpringClick { showBountyExplainDialog = true }
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    Text("฿", color = goldAccent, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text(OnePieceHelper.formatBeli(bountyBeli.first), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Icon(Icons.Default.Info, contentDescription = "Spiegazione Beli e Barre", tint = goldAccent, modifier = Modifier.size(13.dp))
-                                                                }
                                                             }
                                                         }
 
@@ -1478,7 +1374,7 @@ class MainActivity : ComponentActivity() {
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Text("Progresso Globale Serie", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                                            Text("${watchedEpisodes.size} di ${OnePieceHelper.TOTAL_AIRING_EPISODES} ep. (${"%.2f".format(percentageWatched)}%)", color = accentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            Text("${watchedEpisodes.size} di ${OnePieceHelper.TOTAL_AIRING_EPISODES} ep. (${String.format(java.util.Locale.ITALIAN, "%.1f", percentageWatched)}%)", color = accentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                         }
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                         LinearProgressIndicator(
@@ -1493,36 +1389,7 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
 
-                                                Spacer(modifier = Modifier.height(14.dp))
-
-                                                // SMART QUICK ACTIONS (Mark up to current, Copy JSON, Restore)
-                                                // Quick action pill (Backup & Restore relocated to Settings Cloud Vault)
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(14.dp),
-                                                        color = Color(0xFF30D15B).copy(alpha = 0.15f),
-                                                        border = BorderStroke(1.dp, Color(0xFF30D15B).copy(alpha = 0.40f)),
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .iosSpringClick {
-                                                                showMarkUpToConfirmDialog = true
-                                                            }
-                                                    ) {
-                                                        Row(
-                                                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
-                                                            horizontalArrangement = Arrangement.Center,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Icon(Icons.Default.DoneAll, contentDescription = null, tint = Color(0xFF30D15B), modifier = Modifier.size(18.dp))
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Text("Segna tutti gli episodi come visti fino all'Ep. $currentEpisodeNumber", color = Color(0xFF30D15B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-                                                }
-
-                                                Spacer(modifier = Modifier.height(20.dp))
+                                                Spacer(modifier = Modifier.height(18.dp))
 
                                                 // COMPACT COLORED FILTER CHIPS (Clean, Strict English Designations, 120Hz smooth)
                                                 data class FilterOption(val label: String, val activeColor: Color, val tagColor: Color)
@@ -1585,13 +1452,13 @@ class MainActivity : ComponentActivity() {
                                                         .fillMaxWidth()
                                                         .padding(vertical = 5.dp),
                                                     shape = RoundedCornerShape(20.dp),
-                                                    color = Color(0xF2161622),
+                                                    color = Color(0xF0121217),
                                                     border = if (isCompleted) {
-                                                        BorderStroke(1.2.dp, Color(0xFF34C759).copy(alpha = 0.60f))
+                                                        BorderStroke(1.dp, Color(0xFF30D15B).copy(alpha = 0.35f))
                                                     } else {
-                                                        BorderStroke(1.dp, specularBorder)
+                                                        BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                                                     },
-                                                    shadowElevation = 4.dp
+                                                    shadowElevation = 2.dp
                                                 ) {
                                                     Column(modifier = Modifier.padding(16.dp)) {
                                                         Row(
@@ -1606,7 +1473,12 @@ class MainActivity : ComponentActivity() {
                                                                     Text(text = saga.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                                                     if (isCompleted) {
                                                                         Spacer(modifier = Modifier.width(6.dp))
-                                                                        Text("🏆", fontSize = 13.sp)
+                                                                        Icon(
+                                                                            Icons.Default.CheckCircle,
+                                                                            contentDescription = "Completata",
+                                                                            tint = Color(0xFF30D15B),
+                                                                            modifier = Modifier.size(15.dp)
+                                                                        )
                                                                     }
                                                                 }
                                                                 Text(text = "Ep. ${saga.range.first} - ${saga.range.last} • ${saga.description.take(45)}...", color = Color.Gray, fontSize = 11.sp)
@@ -1614,8 +1486,8 @@ class MainActivity : ComponentActivity() {
 
                                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                                 Text(
-                                                                    text = "$watchedInSaga / $totalInSaga",
-                                                                    color = if (isCompleted) Color(0xFF34C759) else Color.White,
+                                                                    text = "${(sagaPercent * 100).toInt()}%",
+                                                                    color = if (isCompleted) Color(0xFF30D15B) else Color.White,
                                                                     fontWeight = FontWeight.Bold,
                                                                     fontSize = 13.sp
                                                                 )
@@ -1631,14 +1503,14 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                         }
 
-                                                        // Micro progress bar inside saga card with explicit explanation
+                                                        // Micro progress bar inside saga card without duplicate numbers
                                                         Spacer(modifier = Modifier.height(10.dp))
                                                         Row(
                                                             modifier = Modifier.fillMaxWidth(),
                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
                                                             Text("Progresso Saga", color = Color.Gray, fontSize = 10.sp)
-                                                            Text("$watchedInSaga / $totalInSaga ep. (${(sagaPercent * 100).toInt()}%)", color = if (isCompleted) Color(0xFF34C759) else Color.White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                                            Text("$watchedInSaga / $totalInSaga ep.", color = if (isCompleted) Color(0xFF30D15B) else Color.White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                                                         }
                                                         Spacer(modifier = Modifier.height(4.dp))
                                                         LinearProgressIndicator(
@@ -1647,7 +1519,7 @@ class MainActivity : ComponentActivity() {
                                                                 .fillMaxWidth()
                                                                 .height(4.dp)
                                                                 .clip(RoundedCornerShape(2.dp)),
-                                                            color = if (isCompleted) Color(0xFF34C759) else accentRed,
+                                                            color = if (isCompleted) Color(0xFF30D15B) else accentRed,
                                                             trackColor = Color.White.copy(alpha = 0.10f)
                                                         )
 
@@ -1669,25 +1541,36 @@ class MainActivity : ComponentActivity() {
                                                                     Surface(
                                                                         shape = RoundedCornerShape(10.dp),
                                                                         color = Color.White.copy(alpha = 0.08f),
-                                                                        border = BorderStroke(1.dp, specularBorder),
+                                                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                                                                         modifier = Modifier.iosSpringClick {
                                                                             val markAll = !isCompleted
                                                                             saga.range.forEach { prefs.markEpisodeWatched(it, markAll) }
                                                                             watchedEpisodes = prefs.getWatchedEpisodes()
                                                                             Toast.makeText(
                                                                                 this@MainActivity,
-                                                                                if (markAll) "Saga ${saga.name} completata! ✅" else "Saga azzerata",
+                                                                                if (markAll) "Saga ${saga.name} completata!" else "Saga azzerata",
                                                                                 Toast.LENGTH_SHORT
                                                                             ).show()
                                                                         }
                                                                     ) {
-                                                                        Text(
-                                                                            text = if (isCompleted) "Deseleziona tutta la saga" else "Segna tutta la saga come vista ✅",
-                                                                            color = if (isCompleted) Color.Gray else Color(0xFF34C759),
-                                                                            fontSize = 11.sp,
-                                                                            fontWeight = FontWeight.Bold,
-                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                                                        )
+                                                                        Row(
+                                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                                            verticalAlignment = Alignment.CenterVertically
+                                                                        ) {
+                                                                            Icon(
+                                                                                Icons.Default.DoneAll,
+                                                                                contentDescription = null,
+                                                                                tint = if (isCompleted) Color.Gray else Color(0xFF30D15B),
+                                                                                modifier = Modifier.size(14.dp)
+                                                                            )
+                                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                                            Text(
+                                                                                text = if (isCompleted) "Deseleziona tutta la saga" else "Segna saga come vista",
+                                                                                color = if (isCompleted) Color.Gray else Color(0xFF30D15B),
+                                                                                fontSize = 11.sp,
+                                                                                fontWeight = FontWeight.Bold
+                                                                            )
+                                                                        }
                                                                     }
                                                                 }
 
@@ -1759,6 +1642,19 @@ class MainActivity : ComponentActivity() {
 
                                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                                         IconButton(
+                                                                            onClick = {
+                                                                                val q = prefs.getPreferredDownloadQuality()
+                                                                                coroutineScope.launch {
+                                                                                    downloadManagerHelper.startDownloadForEpisode(ep, q)
+                                                                                }
+                                                                                Toast.makeText(this@MainActivity, "Download Ep. $ep ($q) avviato!", Toast.LENGTH_SHORT).show()
+                                                                            },
+                                                                            modifier = Modifier.size(28.dp)
+                                                                        ) {
+                                                                            Icon(Icons.Default.Download, contentDescription = "Scarica", tint = Color(0xFF32ADE6), modifier = Modifier.size(16.dp))
+                                                                        }
+
+                                                                        IconButton(
                                                                             onClick = { playEpisode(ep) },
                                                                             modifier = Modifier.size(28.dp)
                                                                         ) {
@@ -1789,47 +1685,7 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 2 -> {
-                                    // TAB 2: SITO WEB ONE PIECE POWER
-                                    Box(modifier = Modifier.fillMaxSize()) {
-                                        AnimatedVisibility(
-                                            visible = activeVideoUrl == null && detectedVideoUrl != null,
-                                            enter = slideInVertically(
-                                                initialOffsetY = { it },
-                                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                                            ),
-                                            exit = slideOutVertically(
-                                                targetOffsetY = { it },
-                                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                                            ),
-                                            modifier = Modifier
-                                                .align(Alignment.BottomCenter)
-                                                .padding(bottom = 20.dp, start = 20.dp, end = 20.dp)
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(22.dp),
-                                                color = accentRed,
-                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                                                shadowElevation = 14.dp,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .iosSpringClick { activeVideoUrl = detectedVideoUrl }
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(16.dp),
-                                                    horizontalArrangement = Arrangement.Center,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Icon(Icons.Default.Movie, contentDescription = null, tint = Color.White)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Apri nel Player Cinema 🎬", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                3 -> {
-                                    // TAB 3: DOWNLOAD OFFLINE MODERNO (720p/1080p, Batch Download, Progress Real-Time, Cancel Reale)
+                                    // TAB 2: DOWNLOAD OFFLINE MODERNO (720p/1080p, Batch Download, Progress Real-Time, Cancel Reale)
                                     DownloadTabContent(
                                         downloadManagerHelper = downloadManagerHelper,
                                         prefs = prefs,
@@ -1839,8 +1695,144 @@ class MainActivity : ComponentActivity() {
                                             activeVideoUrl = filePath
                                             currentEpisodeNumber = epNum
                                             currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, epNum)
-                                        }
+                                        },
+                                        onOpenSettings = { showSettingsDialog = true }
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                        // IN-APP BROWSER OVERLAY (Aperto tramite pulsante nella Home)
+                        if (isBrowserOpen) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                // Top Chrome Bar
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .align(Alignment.TopCenter)
+                                        .statusBarsPadding()
+                                        .height(56.dp),
+                                    color = Color(0xF2101016),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                if (webViewInstance?.canGoBack() == true) {
+                                                    webViewInstance?.goBack()
+                                                } else {
+                                                    isBrowserOpen = false
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.White.copy(alpha = 0.10f))
+                                        ) {
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.ArrowBack,
+                                                contentDescription = "Indietro",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "One Piece Power",
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = currentWebUrl,
+                                                color = Color.Gray,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { webViewInstance?.reload() },
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.White.copy(alpha = 0.10f))
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Refresh,
+                                                contentDescription = "Ricarica",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        IconButton(
+                                            onClick = { isBrowserOpen = false },
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.White.copy(alpha = 0.10f))
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Chiudi Browser",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Floating Quick Player Launch
+                                AnimatedVisibility(
+                                    visible = activeVideoUrl == null && detectedVideoUrl != null,
+                                    enter = slideInVertically(
+                                        initialOffsetY = { it },
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                    ),
+                                    exit = slideOutVertically(
+                                        targetOffsetY = { it },
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                    ),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .navigationBarsPadding()
+                                        .padding(bottom = 16.dp, start = 20.dp, end = 20.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(22.dp),
+                                        color = accentRed,
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                                        shadowElevation = 14.dp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .iosSpringClick {
+                                                activeVideoUrl = detectedVideoUrl
+                                                isBrowserOpen = false
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(16.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Movie, contentDescription = null, tint = Color.White)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Apri nel Player Cinema 🎬", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1880,6 +1872,232 @@ class MainActivity : ComponentActivity() {
                                             color = Color.Gray,
                                             fontSize = 12.sp
                                         )
+                                    }
+                                }
+                            }
+                        }
+
+                        // FLOATING GLASS CAPSULE NAVIGATION DOCK (Apple Squircle, Obsidian Black)
+                        if (activeVideoUrl == null && !isBrowserOpen) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                            ) {
+                                // Soft gradient scrim to prevent text overlap underneath dock
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(115.dp)
+                                        .align(Alignment.BottomCenter)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.Transparent,
+                                                    Color(0x99070709),
+                                                    Color(0xF5070709)
+                                                )
+                                            )
+                                        )
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .windowInsetsPadding(WindowInsets.navigationBars)
+                                        .padding(horizontal = 24.dp, vertical = 14.dp)
+                                        .align(Alignment.BottomCenter)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(32.dp),
+                                        color = Color(0xF8111116),
+                                        border = BorderStroke(1.dp, specularBorder),
+                                        shadowElevation = 24.dp,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        data class NavItem(val tabIndex: Int, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+                                        val items = remember {
+                                            listOf(
+                                                NavItem(0, "Cinema", Icons.Default.PlayCircle),
+                                                NavItem(1, "Registro", Icons.Default.Explore),
+                                                NavItem(2, "Download", Icons.Default.FileDownload)
+                                            )
+                                        }
+
+                                        // LIQUID TEARDROP DROPLET PHYSICS WITH VOLUME CONSERVATION
+                                        val targetPosition = currentTab.toFloat()
+
+                                        // 'head' launches forward with swift spring in the direction of movement
+                                        val headPos by animateFloatAsState(
+                                            targetValue = targetPosition,
+                                            animationSpec = spring(
+                                                dampingRatio = 0.74f,
+                                                stiffness = 400f
+                                            ),
+                                            label = "fluidHead"
+                                        )
+                                        // 'tail' trails behind with elastic fluid inertia
+                                        val tailPos by animateFloatAsState(
+                                            targetValue = targetPosition,
+                                            animationSpec = spring(
+                                                dampingRatio = 0.58f,
+                                                stiffness = 160f
+                                            ),
+                                            label = "fluidTail"
+                                        )
+
+                                        BoxWithConstraints(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(60.dp)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        ) {
+                                            val totalWidth = maxWidth
+                                            val tabCount = items.size
+                                            val tabWidth = totalWidth / tabCount
+                                            val basePillWidth = 74.dp
+                                            val basePillHeight = 44.dp
+
+                                            val minP = minOf(headPos, tailPos)
+                                            val maxP = maxOf(headPos, tailPos)
+                                            val delta = headPos - tailPos // positive = moving right, negative = moving left
+
+                                            // Calculate dynamic liquid horizontal stretch bounds
+                                            val leftX = (tabWidth * (minP + 0.5f)) - (basePillWidth / 2f)
+                                            val rightX = (tabWidth * (maxP + 0.5f)) + (basePillWidth / 2f)
+                                            val liquidWidth = (rightX - leftX).coerceAtLeast(basePillWidth)
+
+                                            // FLUID VOLUME CONSERVATION:
+                                            // As horizontal width stretches from velocity, vertical height squashes down
+                                            val stretchRatio = (liquidWidth.value / basePillWidth.value).coerceAtLeast(1f)
+                                            val liquidHeight = (basePillHeight.value / kotlin.math.sqrt(stretchRatio.toDouble()).toFloat())
+                                                .coerceIn(26f, basePillHeight.value).dp
+
+                                            // Droplet asymmetry: leading front is a bulbous dome, trailing tail tapers
+                                            val speedMagnitude = kotlin.math.abs(delta).coerceIn(0f, 1.5f)
+                                            val isMovingRight = delta >= 0f
+
+                                            val leadCorner = 24.dp
+                                            val trailCorner = (24f - (speedMagnitude * 10f)).coerceAtLeast(12f).dp
+
+                                            val dropletShape = RoundedCornerShape(
+                                                topStart = if (isMovingRight) trailCorner else leadCorner,
+                                                bottomStart = if (isMovingRight) trailCorner else leadCorner,
+                                                topEnd = if (isMovingRight) leadCorner else trailCorner,
+                                                bottomEnd = if (isMovingRight) leadCorner else trailCorner
+                                            )
+
+                                            // THE VISIBLE GLOWING LIQUID DROPLET CAPSULE
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(x = leftX)
+                                                    .width(liquidWidth)
+                                                    .height(liquidHeight)
+                                                    .align(Alignment.CenterStart)
+                                                    .clip(dropletShape)
+                                                    .background(
+                                                        Brush.horizontalGradient(
+                                                            listOf(
+                                                                accentRed.copy(alpha = 0.32f),
+                                                                Color(0xFFFF3333).copy(alpha = 0.22f),
+                                                                accentRed.copy(alpha = 0.36f)
+                                                            )
+                                                        )
+                                                    )
+                                                    .border(
+                                                        width = 1.2.dp,
+                                                        brush = Brush.horizontalGradient(
+                                                            listOf(
+                                                                accentRed.copy(alpha = 0.90f),
+                                                                Color(0xFFFF5555).copy(alpha = 0.65f),
+                                                                accentRed.copy(alpha = 0.95f)
+                                                            )
+                                                        ),
+                                                        shape = dropletShape
+                                                    )
+                                            ) {
+                                                // Glossy liquid specular sheen along top edge
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth(0.75f)
+                                                        .height(2.dp)
+                                                        .align(Alignment.TopCenter)
+                                                        .padding(top = 3.dp)
+                                                        .background(
+                                                            Brush.horizontalGradient(
+                                                                listOf(
+                                                                    Color.Transparent,
+                                                                    Color.White.copy(alpha = 0.55f),
+                                                                    Color.Transparent
+                                                                )
+                                                            )
+                                                        )
+                                                )
+                                            }
+
+                                            // Interactive Row containing the nav icons
+                                            Row(
+                                                modifier = Modifier.fillMaxSize(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                items.forEach { item ->
+                                                    val isSelected = currentTab == item.tabIndex
+                                                    val iconScale by animateFloatAsState(
+                                                        targetValue = if (isSelected) 1.16f else 1.0f,
+                                                        animationSpec = spring(
+                                                            dampingRatio = 0.65f,
+                                                            stiffness = 350f
+                                                        ),
+                                                        label = "navIconScale"
+                                                    )
+                                                    val iconAlpha by animateFloatAsState(
+                                                        targetValue = if (isSelected) 1.0f else 0.45f,
+                                                        animationSpec = spring(
+                                                            dampingRatio = 0.8f,
+                                                            stiffness = 300f
+                                                        ),
+                                                        label = "navIconAlpha"
+                                                    )
+
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxHeight()
+                                                            .iosSpringClick {
+                                                                if (item.tabIndex == 1) {
+                                                                    watchedEpisodes = prefs.getWatchedEpisodes()
+                                                                    favoriteEpisodes = prefs.getFavoriteEpisodes()
+                                                                }
+                                                                if (item.tabIndex == 2) {
+                                                                    downloadedList = getDownloadedFilesList()
+                                                                }
+                                                                currentTab = item.tabIndex
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = item.icon,
+                                                            contentDescription = item.label,
+                                                            tint = if (isSelected) Color.White else Color.White.copy(alpha = iconAlpha),
+                                                            modifier = Modifier
+                                                                .size(24.dp)
+                                                                .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                                                        )
+
+                                                        if (item.tabIndex == 2 && downloadedList.isNotEmpty()) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopCenter)
+                                                                    .padding(top = 8.dp, start = 22.dp)
+                                                                    .size(6.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(accentRed)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2067,7 +2285,7 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                         Spacer(modifier = Modifier.width(6.dp))
                                                         Text(
-                                                            text = if (isEpFav) "Preferito" else "Aggiungi ⭐",
+                                                            text = if (isEpFav) "Preferito" else "Aggiungi",
                                                             color = Color.White,
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.Bold
@@ -2118,57 +2336,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // CONFIRM DIALOG: MARK UP TO CURRENT EPISODE
-                        if (showMarkUpToConfirmDialog) {
-                            Dialog(onDismissRequest = { showMarkUpToConfirmDialog = false }) {
-                                Surface(
-                                    shape = RoundedCornerShape(24.dp),
-                                    color = Color(0xF2161622),
-                                    border = BorderStroke(1.dp, specularBorder),
-                                    modifier = Modifier.fillMaxWidth(0.92f)
-                                ) {
-                                    Column(modifier = Modifier.padding(22.dp)) {
-                                        Text("Conferma Rapida", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        Text(
-                                            "Vuoi segnare tutti gli episodi dall'Episodio 1 all'Episodio $currentEpisodeNumber come VISTI?",
-                                            color = Color.LightGray,
-                                            fontSize = 13.sp,
-                                            lineHeight = 18.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(20.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                        ) {
-                                            OutlinedButton(
-                                                onClick = { showMarkUpToConfirmDialog = false },
-                                                modifier = Modifier.weight(1f),
-                                                shape = RoundedCornerShape(12.dp)
-                                            ) {
-                                                Text("Annulla", color = Color.LightGray)
-                                            }
-                                            Button(
-                                                onClick = {
-                                                    for (ep in 1..currentEpisodeNumber) {
-                                                        prefs.markEpisodeWatched(ep, true)
-                                                    }
-                                                    watchedEpisodes = prefs.getWatchedEpisodes()
-                                                    showMarkUpToConfirmDialog = false
-                                                    Toast.makeText(this@MainActivity, "Episodi da 1 a $currentEpisodeNumber segnati come visti! ✅", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34C759)),
-                                                shape = RoundedCornerShape(12.dp)
-                                            ) {
-                                                Text("Conferma", fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         // EXPANDING MODAL 2: QUICK JUMP & SEARCH (iOS 17 FLOATING MODAL)
                         if (showQuickJumpDialog) {
                             val focusManager = LocalFocusManager.current
@@ -2179,7 +2346,8 @@ class MainActivity : ComponentActivity() {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(Color.Black.copy(alpha = 0.70f))
+                                        .background(Color.Black.copy(alpha = 0.75f))
+                                        .imePadding()
                                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                             showQuickJumpDialog = false
                                         },
@@ -2189,18 +2357,25 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier
                                             .fillMaxWidth(0.92f)
                                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
-                                        shape = RoundedCornerShape(28.dp),
-                                        color = Color(0xF2161622),
-                                        border = BorderStroke(1.dp, specularBorder),
+                                        shape = RoundedCornerShape(26.dp),
+                                        color = Color(0xF2121217),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                                         shadowElevation = 24.dp
                                     ) {
-                                        Column(modifier = Modifier.padding(22.dp)) {
+                                        Column(
+                                            modifier = Modifier
+                                                .padding(22.dp)
+                                                .verticalScroll(rememberScrollState())
+                                        ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Salta a qualsiasi Episodio", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                                Column {
+                                                    Text("Cerca Episodio o Saga", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                                    Text("Digita il numero o il nome della saga", color = Color.Gray, fontSize = 12.sp)
+                                                }
                                                 IconButton(onClick = { showQuickJumpDialog = false }) {
                                                     Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.Gray)
                                                 }
@@ -2210,26 +2385,133 @@ class MainActivity : ComponentActivity() {
 
                                             OutlinedTextField(
                                                 value = quickJumpInput,
-                                                onValueChange = { quickJumpInput = it.filter { ch -> ch.isDigit() } },
-                                                placeholder = { Text("Es. 1071 per Gear 5, 483...", color = Color.Gray) },
+                                                onValueChange = { quickJumpInput = it },
+                                                placeholder = { Text("Es. 1071, Wano, Alabasta, Enies...", color = Color.Gray) },
                                                 modifier = Modifier.fillMaxWidth(),
-                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                                keyboardActions = KeyboardActions(onDone = {
+                                                leadingIcon = {
+                                                    Icon(Icons.Default.Search, contentDescription = null, tint = accentRed)
+                                                },
+                                                trailingIcon = {
+                                                    if (quickJumpInput.isNotEmpty()) {
+                                                        IconButton(onClick = { quickJumpInput = "" }) {
+                                                            Icon(Icons.Default.Close, contentDescription = "Cancella", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                                        }
+                                                    }
+                                                },
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
+                                                keyboardActions = KeyboardActions(onSearch = {
                                                     focusManager.clearFocus()
-                                                    val epNum = quickJumpInput.toIntOrNull()
+                                                    val epNum = quickJumpInput.trim().toIntOrNull()
                                                     if (epNum != null && epNum in 1..OnePieceHelper.TOTAL_AIRING_EPISODES) {
                                                         showQuickJumpDialog = false
                                                         playEpisode(epNum)
+                                                    } else {
+                                                        val query = quickJumpInput.trim().lowercase()
+                                                        val matchedSaga = OnePieceHelper.SAGAS.find { it.name.lowercase().contains(query) }
+                                                        if (matchedSaga != null) {
+                                                            showQuickJumpDialog = false
+                                                            playEpisode(matchedSaga.range.first)
+                                                        }
                                                     }
                                                 }),
                                                 singleLine = true,
+                                                shape = RoundedCornerShape(16.dp),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedBorderColor = accentRed,
                                                     unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
                                                     focusedTextColor = Color.White,
-                                                    unfocusedTextColor = Color.White
+                                                    unfocusedTextColor = Color.White,
+                                                    focusedContainerColor = Color.White.copy(alpha = 0.04f),
+                                                    unfocusedContainerColor = Color.White.copy(alpha = 0.04f)
                                                 )
                                             )
+
+                                            // Dynamic Search Results
+                                            val queryTrimmed = quickJumpInput.trim()
+                                            val parsedEpNum = queryTrimmed.toIntOrNull()
+                                            val matchingSagas = if (queryTrimmed.isNotEmpty() && parsedEpNum == null) {
+                                                OnePieceHelper.SAGAS.filter { it.name.lowercase().contains(queryTrimmed.lowercase()) }
+                                            } else emptyList()
+
+                                            if (parsedEpNum != null && parsedEpNum in 1..OnePieceHelper.TOTAL_AIRING_EPISODES) {
+                                                Spacer(modifier = Modifier.height(14.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    color = Color.White.copy(alpha = 0.06f),
+                                                    border = BorderStroke(1.dp, specularBorder),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(14.dp),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text("Episodio $parsedEpNum", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                                            val epType = OnePieceHelper.getEpisodeType(parsedEpNum)
+                                                            Text(epType.label, color = Color(epType.hexColor), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            IconButton(
+                                                                onClick = {
+                                                                    val q = prefs.getPreferredDownloadQuality()
+                                                                    coroutineScope.launch {
+                                                                        downloadManagerHelper.startDownloadForEpisode(parsedEpNum, q)
+                                                                    }
+                                                                    Toast.makeText(this@MainActivity, "Download Ep. $parsedEpNum ($q) avviato! 📥", Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0x3332ADE6))
+                                                            ) {
+                                                                Icon(Icons.Default.Download, contentDescription = "Scarica", tint = Color(0xFF32ADE6), modifier = Modifier.size(18.dp))
+                                                            }
+                                                            Button(
+                                                                onClick = {
+                                                                    showQuickJumpDialog = false
+                                                                    playEpisode(parsedEpNum)
+                                                                },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = accentRed),
+                                                                shape = RoundedCornerShape(12.dp),
+                                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                                            ) {
+                                                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Text("Guarda", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else if (matchingSagas.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(14.dp))
+                                                Text("Saghe Trovate:", color = Color.Gray, fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    matchingSagas.take(3).forEach { saga ->
+                                                        Surface(
+                                                            shape = RoundedCornerShape(14.dp),
+                                                            color = Color.White.copy(alpha = 0.05f),
+                                                            border = BorderStroke(1.dp, specularBorder),
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .iosSpringClick {
+                                                                    showQuickJumpDialog = false
+                                                                    playEpisode(saga.range.first)
+                                                                }
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.padding(12.dp),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Column {
+                                                                    Text(saga.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                                    Text("Episodi ${saga.range.first} - ${saga.range.last}", color = Color.Gray, fontSize = 11.sp)
+                                                                }
+                                                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = accentRed, modifier = Modifier.size(18.dp))
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
 
                                             Spacer(modifier = Modifier.height(16.dp))
                                             Text("Saghe Principali / Momenti Chiave:", color = Color.LightGray, fontSize = 12.sp)
@@ -2271,12 +2553,19 @@ class MainActivity : ComponentActivity() {
 
                                             Button(
                                                 onClick = {
-                                                    val epNum = quickJumpInput.toIntOrNull()
+                                                    val epNum = quickJumpInput.trim().toIntOrNull()
                                                     if (epNum != null && epNum in 1..OnePieceHelper.TOTAL_AIRING_EPISODES) {
                                                         showQuickJumpDialog = false
                                                         playEpisode(epNum)
                                                     } else {
-                                                        Toast.makeText(this@MainActivity, "Inserisci un numero da 1 a ${OnePieceHelper.TOTAL_AIRING_EPISODES}", Toast.LENGTH_SHORT).show()
+                                                        val query = quickJumpInput.trim().lowercase()
+                                                        val matchedSaga = OnePieceHelper.SAGAS.find { it.name.lowercase().contains(query) }
+                                                        if (matchedSaga != null) {
+                                                            showQuickJumpDialog = false
+                                                            playEpisode(matchedSaga.range.first)
+                                                        } else {
+                                                            Toast.makeText(this@MainActivity, "Inserisci un numero da 1 a ${OnePieceHelper.TOTAL_AIRING_EPISODES} o il nome di una saga", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     }
                                                 },
                                                 modifier = Modifier.fillMaxWidth(),
@@ -2503,158 +2792,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // BOUNTY BELI & BARS EXPLANATION DIALOG
-                        if (showBountyExplainDialog) {
-                            Dialog(
-                                onDismissRequest = { showBountyExplainDialog = false },
-                                properties = DialogProperties(usePlatformDefaultWidth = false)
-                            ) {
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.92f)
-                                        .clip(RoundedCornerShape(26.dp)),
-                                    color = Color(0xF0141622),
-                                    border = BorderStroke(1.dp, specularBorder),
-                                    shadowElevation = 24.dp
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .padding(22.dp)
-                                            .verticalScroll(rememberScrollState())
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("฿", color = goldAccent, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Column {
-                                                    Text(
-                                                        text = "Taglia Pirata & Progresso",
-                                                        color = Color.White,
-                                                        fontSize = 17.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                    Text(
-                                                        text = "Guida ai Beli e alle barre dell'app",
-                                                        color = Color.Gray,
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                            IconButton(onClick = { showBountyExplainDialog = false }) {
-                                                Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.Gray)
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        // Section 1: Taglia in Beli (฿)
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = goldAccent.copy(alpha = 0.12f),
-                                            border = BorderStroke(1.dp, goldAccent.copy(alpha = 0.35f)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp)) {
-                                                Text(
-                                                    text = "1. Cos'è la Taglia in Beli (฿)?",
-                                                    color = goldAccent,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                Text(
-                                                    text = "I Berries (Beli ฿) sono la valuta ufficiale del mondo di One Piece. In questa applicazione rappresentano la tua taglia pirata rilasciata dalla Marina, calcolata con 1.500.000 ฿ per ogni episodio visto.",
-                                                    color = Color.White.copy(alpha = 0.9f),
-                                                    fontSize = 12.sp,
-                                                    lineHeight = 16.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                Text(
-                                                    text = "La tua taglia attuale: ${OnePieceHelper.formatBeli(bountyBeli.first)} ฿ (${watchedEpisodes.size} episodi visti)",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    fontSize = 12.sp
-                                                )
-                                                Text(
-                                                    text = "Grado ottenuto: $pirateRank",
-                                                    color = goldAccent,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        // Section 2: Barre di Avanzamento
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFF32ADE6).copy(alpha = 0.12f),
-                                            border = BorderStroke(1.dp, Color(0xFF32ADE6).copy(alpha = 0.35f)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp)) {
-                                                Text(
-                                                    text = "2. A cosa fanno riferimento le Barre?",
-                                                    color = Color(0xFF32ADE6),
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                Text(
-                                                    text = "• Barra Globale nel Diario: calcola la percentuale esatta di episodi completati sull'intero anime (${watchedEpisodes.size} su ${OnePieceHelper.TOTAL_AIRING_EPISODES} ep. = ${"%.2f".format(OnePieceHelper.calculateStats(watchedEpisodes.size).second)}%).\n\n• Barre delle Saghe: ciascuna saga ha una sua barra dedicata che indica il progresso di quello specifico arco narrativo (es. quanti episodi hai visto su quelli totali della saga).",
-                                                    color = Color.White.copy(alpha = 0.9f),
-                                                    fontSize = 12.sp,
-                                                    lineHeight = 16.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        // Section 3: Tag Episodi Uniformi
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color.White.copy(alpha = 0.05f),
-                                            border = BorderStroke(1.dp, specularBorder),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(14.dp)) {
-                                                Text(
-                                                    text = "3. Tag Ufficiali degli Episodi",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                Text(
-                                                    text = "I tag sono unificati in denominazione inglese sia nei filtri che sul player:\n• Canon (Verde): Fedele al manga originale\n• Anime Canon (Azzurro): Episodi canonici esclusivi anime\n• Mixed (Ambra): Episodi con trama mista canon e filler\n• Filler (Rosso): Episodi riempitivi non canonici",
-                                                    color = Color.LightGray,
-                                                    fontSize = 12.sp,
-                                                    lineHeight = 16.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(18.dp))
-
-                                        Button(
-                                            onClick = { showBountyExplainDialog = false },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = accentRed),
-                                            shape = RoundedCornerShape(14.dp)
-                                        ) {
-                                            Text("Ho Capito, Salpiamo! 🏴‍☠️", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         // SETTINGS & CLOUD DIALOG MODAL (Gear Icon)
                         SettingsDialog(
                             isOpen = showSettingsDialog,
@@ -2667,18 +2804,12 @@ class MainActivity : ComponentActivity() {
                             onRestoreJsonRequested = {
                                 showImportDialog = true
                             },
-                            onMarkAllWatchedUpToCurrent = {
-                                for (ep in 1..currentEpisodeNumber) {
-                                    prefs.markEpisodeWatched(ep, true)
-                                }
-                                watchedEpisodes = prefs.getWatchedEpisodes()
-                                Toast.makeText(this@MainActivity, "Segnati come visti fino all'episodio $currentEpisodeNumber! ✅", Toast.LENGTH_SHORT).show()
-                            },
                             onSyncSuccess = { email ->
                                 cloudUserEmail = email
                                 cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
                             }
                         )
+
                         activeVideoUrl?.let { videoUrl ->
                             VideoPlayerScreen(
                                 videoUrl = videoUrl,

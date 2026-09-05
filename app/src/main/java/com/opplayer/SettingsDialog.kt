@@ -39,7 +39,6 @@ fun SettingsDialog(
     dailyStreak: Int,
     watchedCount: Int,
     onRestoreJsonRequested: () -> Unit,
-    onMarkAllWatchedUpToCurrent: () -> Unit,
     onSyncSuccess: (String) -> Unit
 ) {
     if (!isOpen) return
