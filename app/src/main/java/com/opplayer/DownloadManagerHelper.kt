@@ -92,8 +92,8 @@ class DownloadManagerHelper(private val context: Context) {
             }
 
             val request = DownloadManager.Request(Uri.parse(resolvedUrl)).apply {
-                setTitle("One Piece - Ep. $epNumber ($quality)")
-                setDescription("Download episodio offline in alta risoluzione")
+                setTitle("One Piece - Episodio $epNumber")
+                setDescription("Download episodio offline")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 setDestinationUri(Uri.fromFile(targetFile))
                 setAllowedOverMetered(true)

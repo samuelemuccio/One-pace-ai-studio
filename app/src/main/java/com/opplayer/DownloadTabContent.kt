@@ -41,15 +41,15 @@ fun DownloadTabContent(
 
     var activeDownloads by remember { mutableStateOf(emptyList<ActiveDownloadProgress>()) }
     var completedDownloads by remember { mutableStateOf(emptyList<LocalEpisodeItem>()) }
-    var selectedQuality by remember { mutableStateOf(prefs.getPreferredDownloadQuality()) }
     var isBatchDownloading by remember { mutableStateOf(false) }
 
-    // Polling periodico ogni 1s per aggiornare i progressi in tempo reale
+    // Polling periodico adattivo (1s con download attivi, 3s se idle per salvare batteria)
     LaunchedEffect(Unit) {
         while (true) {
-            activeDownloads = downloadManagerHelper.getActiveDownloads()
+            val active = downloadManagerHelper.getActiveDownloads()
+            activeDownloads = active
             completedDownloads = downloadManagerHelper.getCompletedDownloads()
-            delay(1000L)
+            delay(if (active.isNotEmpty()) 1000L else 3000L)
         }
     }
 
@@ -125,7 +125,7 @@ fun DownloadTabContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // CARD CONTROLLO QUALITÀ & BATCH DOWNLOAD (SCARICA IN MASSA)
+                // CARD DOWNLOAD RAPIDO IN MASSA
                 Surface(
                     shape = RoundedCornerShape(24.dp),
                     color = Color(0x99181826),
@@ -140,61 +140,26 @@ fun DownloadTabContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Risoluzione Download",
+                                text = "Download Rapido",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
 
                             Text(
-                                text = if (selectedQuality == "720p") "Salva fino a 300MB/ep" else "Massima Fedeltà",
-                                color = if (selectedQuality == "720p") successGreen else Color.Gray,
+                                text = "Prossimi episodi",
+                                color = successGreen,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Selettore 720p vs 1080p
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (selectedQuality == "720p") accentRed.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
-                                border = BorderStroke(1.dp, if (selectedQuality == "720p") accentRed else Color.White.copy(alpha = 0.12f)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        selectedQuality = "720p"
-                                        prefs.setPreferredDownloadQuality("720p")
-                                    }
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("720p Leggero", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("~180-220 MB • Consigliato", color = successGreen, fontSize = 10.sp)
-                                }
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (selectedQuality == "1080p") accentRed.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
-                                border = BorderStroke(1.dp, if (selectedQuality == "1080p") accentRed else Color.White.copy(alpha = 0.12f)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        selectedQuality = "1080p"
-                                        prefs.setPreferredDownloadQuality("1080p")
-                                    }
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("1080p Originale", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("~450-550 MB", color = Color.Gray, fontSize = 10.sp)
-                                }
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Scarica in un tocco i prossimi 3 episodi della tua rotta per guardarli offline.",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -210,12 +175,12 @@ fun DownloadTabContent(
 
                                     Toast.makeText(
                                         context,
-                                        "Avvio download in massa per gli episodi ${toDownload.joinToString(", ")} ($selectedQuality)...",
-                                        Toast.LENGTH_LONG
+                                        "Avvio download degli episodi ${toDownload.joinToString(", ")}...",
+                                        Toast.LENGTH_SHORT
                                     ).show()
 
                                     for (ep in toDownload) {
-                                        downloadManagerHelper.startDownloadForEpisode(ep, selectedQuality)
+                                        downloadManagerHelper.startDownloadForEpisode(ep)
                                     }
                                     activeDownloads = downloadManagerHelper.getActiveDownloads()
                                     isBatchDownloading = false
@@ -229,7 +194,7 @@ fun DownloadTabContent(
                             Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isBatchDownloading) "Preparazione download..." else "Scarica Prossimi 3 Episodi ($selectedQuality)",
+                                text = if (isBatchDownloading) "Preparazione download..." else "Scarica Prossimi 3 Episodi",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.White
@@ -417,7 +382,7 @@ fun DownloadTabContent(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Usa il pulsante 'Scarica Prossimi 3 Episodi' in alto o tocca 'Scarica (720p)' nella Home per salvare gli episodi e guardarli ovunque senza internet.",
+                                text = "Usa il pulsante 'Scarica Prossimi 3 Episodi' in alto o tocca 'Scarica' nella schermata della saga per salvare gli episodi e guardarli ovunque offline.",
                                 color = Color.Gray,
                                 fontSize = 12.sp,
                                 textAlign = TextAlign.Center,

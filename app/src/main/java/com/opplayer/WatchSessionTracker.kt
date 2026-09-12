@@ -11,11 +11,15 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Traccia il tempo di visione attivo per ogni episodio.
- * - Pausa automaticamente quando l'app va in background
- * - Riprende quando l'utente rientra
- * - Salva metriche per episodio: tempo attivo, pause, completato
- * - Fornisce medie e proiezioni
+ * Tracker wall-clock del tempo di visione.
+ *
+ * PRINCIPIO CHIAVE: misura il TEMPO REALE (wall clock) in cui il video è in play.
+ * NON misura i minuti di contenuto video consumati.
+ * NON divide per la velocità di riproduzione.
+ *
+ * Esempio: video 24 min guardato in 2x con skip = 8 minuti wall clock → activeMs = 8 min.
+ * Se in pausa 3 min → non contati.
+ * Se app in background 10 min → non contati.
  */
 class WatchSessionTracker(private val context: Context) {
 
@@ -25,188 +29,248 @@ class WatchSessionTracker(private val context: Context) {
     private val _activeSession = MutableStateFlow<WatchSession?>(null)
     val activeSession: StateFlow<WatchSession?> = _activeSession
 
-    private val _isTracking = MutableStateFlow(false)
-    val isTracking: StateFlow<Boolean> = _isTracking
+    // === COSTANTI DI BUSINESS ===
+    companion object {
+        const val MIN_SESSION_MS       = 60_000L        // 1 min — sotto questo la sessione è scartata
+        const val MIN_WATCH_FOR_SEEN_MS = 4 * 60_000L   // 4 min reali per marcare "visto"
+        const val SEEN_POSITION_MS      = 22 * 60_000L  // 22:00 posizione minima per "visto"
+    }
 
     // === CICLO DI VITA DELLA SESSIONE ===
 
-    /** Avvia una nuova sessione per l'episodio specificato */
     fun startEpisode(episode: Int) {
-        endEpisode(markCompleted = false, force = true)
+        // Se c'era una sessione aperta, chiudila
+        val previous = _activeSession.value
+        if (previous != null && previous.episode != episode) {
+            endEpisode(markCompleted = false)
+        }
         val now = System.currentTimeMillis()
         _activeSession.value = WatchSession(
             episode = episode,
             startedAtMs = now,
             lastResumedAtMs = now,
-            activeMs = 0L
+            activeMs = 0L,
+            sessionIndex = getNextSessionIndex(episode)
         )
-        _isTracking.value = true
 
-        // Prima sessione assoluta → registra la data di inizio viaggio
         if (prefs.getLong("first_watch_ms", 0L) == 0L) {
-            prefs.edit().putLong("first_watch_ms", now).apply()
+            prefs.edit().putLong("first_watch_ms", OnePieceHelper.getStartDateMs()).apply()
         }
     }
 
-    /** App torna in foreground o video riprende */
-    fun onResume() {
+    /** Da chiamare quando il video va in play */
+    fun onVideoResumed() {
         _activeSession.value?.let {
-            if (it.lastResumedAtMs == 0L) {
-                it.lastResumedAtMs = System.currentTimeMillis()
-            }
+            if (it.lastResumedAtMs == 0L) it.lastResumedAtMs = System.currentTimeMillis()
         }
     }
 
-    /** App va in background o video va in pausa */
-    fun onPause() {
+    /** Da chiamare quando il video va in pausa */
+    fun onVideoPaused() {
         _activeSession.value?.let {
             val now = System.currentTimeMillis()
             if (it.lastResumedAtMs > 0L) {
-                val delta = (now - it.lastResumedAtMs).coerceAtLeast(0L)
-                it.activeMs += delta
+                it.activeMs += (now - it.lastResumedAtMs).coerceAtLeast(0L)
                 it.lastResumedAtMs = 0L
+                it.pauseCount += 1
             }
         }
     }
 
-    /** Chiude l'episodio e salva la sessione */
-    fun endEpisode(markCompleted: Boolean, force: Boolean = false) {
-        val session = _activeSession.value
-        if (session == null && !force) return
-        if (session == null) return
+    fun onResume() = onVideoResumed()
+    fun onPause() = onVideoPaused()
 
-        // chiudi l'ultimo segmento attivo
+    /** Da chiamare quando si chiude il player */
+    fun endEpisode(markCompleted: Boolean, force: Boolean = false) {
+        val session = _activeSession.value ?: return
         if (session.lastResumedAtMs > 0L) {
-            val delta = (System.currentTimeMillis() - session.lastResumedAtMs).coerceAtLeast(0L)
-            session.activeMs += delta
+            session.activeMs += (System.currentTimeMillis() - session.lastResumedAtMs).coerceAtLeast(0L)
+            session.lastResumedAtMs = 0L
         }
         session.completed = markCompleted
 
-        // Ignora sessioni < 30s (probabilmente tap per sbaglio)
-        if (session.activeMs >= 30_000L) {
+        if (session.activeMs >= MIN_SESSION_MS) {
             persistSession(session)
         }
-
         _activeSession.value = null
-        _isTracking.value = false
     }
 
-    /** Da chiamare quando si mette in pausa il video */
-    fun onVideoPaused() = onPause()
+    // === LOGICA "VISTO" INTELLIGENTE ===
 
-    /** Da chiamare quando si riprende il video */
-    fun onVideoResumed() = onResume()
+    /**
+     * Ritorna true se l'episodio può essere considerato "visto".
+     * Condizioni: posizione video ≥ 22:00 AND wall-clock ≥ 4 minuti.
+     */
+    fun shouldMarkAsWatched(playerPositionMs: Long): Boolean {
+        val session = _activeSession.value ?: return false
+        return playerPositionMs >= SEEN_POSITION_MS &&
+               session.activeMs >= MIN_WATCH_FOR_SEEN_MS
+    }
+
+    // === PERSISTENZA ===
 
     private fun persistSession(s: WatchSession) {
-        val arr = try {
-            JSONArray(prefs.getString("sessions", "[]"))
-        } catch (_: Exception) { JSONArray() }
-
+        val arr = getAllSessions()
         val obj = JSONObject().apply {
             put("ep", s.episode)
             put("start", s.startedAtMs)
             put("activeMs", s.activeMs)
             put("pauses", s.pauseCount)
             put("completed", s.completed)
+            put("sessionIndex", s.sessionIndex)
         }
         arr.put(obj)
         prefs.edit().putString("sessions", arr.toString()).apply()
     }
 
+    private fun getNextSessionIndex(episode: Int): Int {
+        val arr = getAllSessions()
+        var count = 0
+        for (i in 0 until arr.length()) {
+            if (arr.getJSONObject(i).optInt("ep", -1) == episode) count++
+        }
+        return count
+    }
+
+    private fun getAllSessions(): JSONArray {
+        return try { JSONArray(prefs.getString("sessions", "[]")) }
+        catch (_: Exception) { JSONArray() }
+    }
+
     // === STATISTICHE ===
 
-    fun getFirstWatchMs(): Long = prefs.getLong("first_watch_ms", 0L)
-
-    fun setFirstWatchMs(ms: Long) {
-        prefs.edit().putLong("first_watch_ms", ms).apply()
+    fun getTotalWatchTimeMs(): Long {
+        val arr = getAllSessions()
+        var sum = 0L
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val ms = o.optLong("activeMs", 0L)
+            if (ms >= MIN_SESSION_MS) sum += ms
+        }
+        return sum
     }
 
-    /** Media ms di visione ATTIVA per episodio (esclude pause in background) */
-    fun getAverageActiveMsPerEpisode(): Long {
+    fun getFirstWatchMs(): Long = prefs.getLong("first_watch_ms", 0L)
+    fun setFirstWatchMs(ms: Long) { prefs.edit().putLong("first_watch_ms", ms).apply() }
+
+    fun getDaysSinceFirstWatch(): Int {
+        val first = getFirstWatchMs().let { if (it > 0L) it else OnePieceHelper.getStartDateMs() }
+        val diff = (System.currentTimeMillis() - first).coerceAtLeast(86_400_000L)
+        return (diff / 86_400_000L).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * Media wall-clock delle sessioni dove l'episodio è stato visto (completed=true).
+     * Solo PRIMA visione per episodio (esclude rewatch).
+     */
+    fun getAverageFirstWatchTimeMs(): Long {
         val arr = getAllSessions()
         if (arr.length() == 0) return 0L
-        var total = 0L
-        for (i in 0 until arr.length()) total += arr.getJSONObject(i).optLong("activeMs", 0L)
-        return total / arr.length()
+
+        val firstWatchPerEp = mutableMapOf<Int, Long>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val ep = o.optInt("ep", -1)
+            val idx = o.optInt("sessionIndex", 0)
+            val completed = o.optBoolean("completed", false)
+            val activeMs = o.optLong("activeMs", 0L)
+            if (ep < 0 || !completed || idx != 0) continue
+            if (activeMs < MIN_SESSION_MS) continue
+            firstWatchPerEp[ep] = activeMs
+        }
+        if (firstWatchPerEp.isEmpty()) return 0L
+        return firstWatchPerEp.values.sum() / firstWatchPerEp.size
     }
 
-    /** Media pause per episodio */
+    fun getAverageActiveMsPerEpisode(): Long = getAverageFirstWatchTimeMs()
+
+    /** Media pause per episodio (solo prime visioni completate) */
     fun getAveragePausesPerEpisode(): Float {
         val arr = getAllSessions()
         if (arr.length() == 0) return 0f
         var total = 0
-        for (i in 0 until arr.length()) total += arr.getJSONObject(i).optInt("pauses", 0)
-        return total.toFloat() / arr.length()
+        var count = 0
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.optInt("sessionIndex", 0) != 0) continue
+            if (!o.optBoolean("completed", false)) continue
+            total += o.optInt("pauses", 0)
+            count++
+        }
+        return if (count > 0) total.toFloat() / count else 0f
     }
 
-    /** Numero totale di sessioni registrate (post-install di questa versione) */
-    fun getTotalSessionsCount(): Int = getAllSessions().length()
-
-    /** Giorni trascorsi dalla prima visione */
-    fun getDaysSinceFirstWatch(): Int {
-        val first = getFirstWatchMs()
-        if (first == 0L) return 0
-        val diff = System.currentTimeMillis() - first
-        return (diff / 86_400_000L).toInt().coerceAtLeast(1)
+    /** Numero totale di sessioni valide (≥ 1 min) */
+    fun getTotalValidSessionsCount(): Int {
+        val arr = getAllSessions()
+        var count = 0
+        for (i in 0 until arr.length()) {
+            if (arr.getJSONObject(i).optLong("activeMs", 0L) >= MIN_SESSION_MS) count++
+        }
+        return count
     }
 
-    /** Media episodi/giorno dal primo avvio della sessione */
+    fun getTotalSessionsCount(): Int = getTotalValidSessionsCount()
+
     fun getEpisodesPerDay(watchedCount: Int): Float {
         val days = getDaysSinceFirstWatch()
-        if (days <= 0) return 0f
-        return watchedCount.toFloat() / days
+        return if (days > 0) watchedCount.toFloat() / days else 0f
     }
 
-    /** Proiezione: quanti giorni per finire al ritmo specificato */
+    /** Numero di episodi diversi effettivamente tracciati */
+    fun getTrackedUniqueEpisodes(): Int {
+        val arr = getAllSessions()
+        val set = mutableSetOf<Int>()
+        for (i in 0 until arr.length()) {
+            if (arr.getJSONObject(i).optLong("activeMs", 0L) >= MIN_SESSION_MS) {
+                set.add(arr.getJSONObject(i).optInt("ep", -1))
+            }
+        }
+        set.remove(-1)
+        return set.size
+    }
+
+    /** Proiezione di fine serie in base a ore giornaliere */
+    fun projectCompletion(
+        remainingEpisodes: Int,
+        avgMsPerEpisode: Long,
+        hoursPerDay: Double
+    ): ProjectionResult {
+        if (avgMsPerEpisode <= 0L || remainingEpisodes <= 0 || hoursPerDay <= 0.0) {
+            return ProjectionResult(hoursPerDay, Int.MAX_VALUE, "", false)
+        }
+        val totalMs = remainingEpisodes.toLong() * avgMsPerEpisode
+        val totalHours = totalMs / 3_600_000.0
+        val daysRemaining = kotlin.math.ceil(totalHours / hoursPerDay).toInt()
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, daysRemaining)
+        val fmt = SimpleDateFormat("d MMM yyyy", Locale.ITALIAN)
+        return ProjectionResult(hoursPerDay, daysRemaining, fmt.format(cal.time), true)
+    }
+
     fun projectCompletion(
         remainingEpisodes: Int,
         episodesPerDay: Double
     ): ProjectionResult {
-        if (episodesPerDay <= 0.0 || remainingEpisodes <= 0) {
-            return ProjectionResult(
-                episodesPerDay = episodesPerDay,
-                daysRemaining = Int.MAX_VALUE,
-                estimatedDate = "",
-                isReachable = false
-            )
+        val avgMs = getAverageFirstWatchTimeMs().let { if (it > 0) it else 15 * 60_000L }
+        val hoursPerDay = (episodesPerDay * avgMs) / 3_600_000.0
+        return projectCompletion(remainingEpisodes, avgMs, hoursPerDay)
+    }
+
+    /** Proiezioni multiple */
+    fun getAllProjections(remainingEpisodes: Int, avgMsPerEpisode: Long): List<ProjectionResult> {
+        return listOf(0.5, 1.0, 2.0, 3.0, 5.0).map {
+            projectCompletion(remainingEpisodes, avgMsPerEpisode, it)
         }
-        val daysRemaining = kotlin.math.ceil(remainingEpisodes / episodesPerDay).toInt()
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, daysRemaining)
-        val fmt = SimpleDateFormat("d MMM yyyy", Locale.ITALIAN)
-
-        return ProjectionResult(
-            episodesPerDay = episodesPerDay,
-            daysRemaining = daysRemaining,
-            estimatedDate = fmt.format(cal.time),
-            isReachable = true
-        )
     }
 
-    /** Proiezioni multiple per ritmi diversi (3, 5, 7, 10 al giorno + attuale) */
-    fun getAllProjections(
-        remainingEpisodes: Int,
-        currentRate: Double
-    ): List<ProjectionResult> {
-        val rates = mutableListOf(currentRate, 3.0, 5.0, 7.0, 10.0)
-            .filter { it > 0.0 }
-            .distinct()
-            .sorted()
-        return rates.map { projectCompletion(remainingEpisodes, it) }
+    fun getAllProjections(remainingEpisodes: Int, currentRate: Double): List<ProjectionResult> {
+        return getAllProjections(remainingEpisodes, getAverageFirstWatchTimeMs())
     }
 
-    private fun getAllSessions(): JSONArray {
-        return try {
-            JSONArray(prefs.getString("sessions", "[]"))
-        } catch (_: Exception) { JSONArray() }
-    }
+    fun clearAll() { prefs.edit().clear().apply() }
 
-    /** Reset completo (per debug o cambio device) */
-    fun clearAll() {
-        prefs.edit().clear().apply()
-    }
-
-    /** IMPORTANTE: imposta la data di inizio viaggio retroattivamente */
+    /** Imposta data inizio viaggio retroattivamente */
     fun setCustomStartDate(daysAgo: Int) {
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
@@ -220,14 +284,16 @@ data class WatchSession(
     var lastResumedAtMs: Long,
     var activeMs: Long,
     var pauseCount: Int = 0,
-    var completed: Boolean = false
+    var completed: Boolean = false,
+    val sessionIndex: Int = 0
 )
 
 data class ProjectionResult(
-    val episodesPerDay: Double,
+    val hoursPerDay: Double,
     val daysRemaining: Int,
     val estimatedDate: String,
-    val isReachable: Boolean
+    val isReachable: Boolean,
+    val episodesPerDay: Double = hoursPerDay
 )
 
 /** Formatta durata ms in "Xh Ym" o "Ym Zs" */
@@ -242,4 +308,11 @@ fun formatDuration(ms: Long): String {
         m > 0 -> "${m}m ${s}s"
         else -> "${s}s"
     }
+}
+
+/** Formatta durata compatta "Xm" */
+fun formatDurationShort(ms: Long): String {
+    if (ms <= 0) return "0m"
+    val min = ms / 60_000
+    return if (min < 60) "${min}m" else "${min / 60}h ${min % 60}m"
 }

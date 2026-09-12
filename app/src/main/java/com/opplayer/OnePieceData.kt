@@ -133,14 +133,28 @@ object OnePieceHelper {
         }
     }
 
-    fun calculateStats(watchedCount: Int): Triple<Double, Int, String> {
-        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.ITALY)
-        val startDate = sdf.parse("2026-03-01") ?: Date()
-        val now = Date()
-        val diffMs = (now.time - startDate.time).coerceAtLeast(0L)
-        val daysElapsed = (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(1L).toInt()
+    fun getStartDateMs(): Long {
+        val cal = Calendar.getInstance()
+        val currentYear = cal.get(Calendar.YEAR)
+        val startCal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, if (cal.get(Calendar.MONTH) >= Calendar.MARCH) currentYear else currentYear - 1)
+            set(Calendar.MONTH, Calendar.MARCH)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return startCal.timeInMillis
+    }
 
-        val dailyAvg = watchedCount.toDouble() / daysElapsed
+    fun calculateStats(watchedCount: Int): Triple<Double, Int, String> {
+        val startMs = getStartDateMs()
+        val nowMs = System.currentTimeMillis()
+        val diffMs = (nowMs - startMs).coerceAtLeast(86_400_000L)
+        val daysElapsed = (diffMs / (1000L * 60 * 60 * 24)).coerceAtLeast(1L).toInt()
+
+        val dailyAvg = if (watchedCount > 0) watchedCount.toDouble() / daysElapsed else 0.0
         val remainingEpisodes = (TOTAL_AIRING_EPISODES - watchedCount).coerceAtLeast(0)
 
         val estimatedDays = if (dailyAvg > 0.05) (remainingEpisodes / dailyAvg).toInt() else 365

@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,6 +48,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import java.util.Locale
 
 @Composable
 fun Modifier.iosSpringPress(onClick: (() -> Unit)? = null): Modifier = composed {
@@ -86,6 +88,7 @@ fun VideoPlayerScreen(
     isAdvancingNext: Boolean = false,
     onEnterPip: () -> Unit = {},
     onDownloadRequested: (String, Int) -> Unit,
+    onPreviousEpisode: (() -> Unit)? = null,
     onNextEpisode: () -> Unit,
     onPositionChanged: (Long) -> Unit,
     onClose: () -> Unit
@@ -200,12 +203,9 @@ fun VideoPlayerScreen(
             currentPos = exoPlayer.currentPosition.coerceAtLeast(0L)
             onPositionChanged(currentPos)
 
-            // Mark episodio come visto (soglia 22:30 o 90% durata)
-            val watchedThresholdMs = prefs.getWatchedThresholdMs()
-            val isPastFixedThreshold = currentPos >= watchedThresholdMs
-            val isNearEnd = totalDuration > 30_000L &&
-                            currentPos >= (totalDuration * 0.90).toLong()
-            if (isPastFixedThreshold || isNearEnd) {
+            // Logica "visto" INTELLIGENTE:
+            // posizione ≥ 22:00 AND wall-clock attivo ≥ 4 minuti
+            if (watchTracker.shouldMarkAsWatched(currentPos)) {
                 prefs.markEpisodeWatched(episodeNumber, true)
             }
             delay(1_000L)
@@ -395,41 +395,29 @@ fun VideoPlayerScreen(
             }
         }
 
-        // BOOST VISUAL FEEDBACK (visibile durante long-press)
+        // BOOST VISUAL FEEDBACK — minimal, piccolo testo in alto a destra
         AnimatedVisibility(
             visible = isBoosting,
-            enter = fadeIn(tween(120)) + scaleIn(initialScale = 0.85f),
-            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.85f),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 80.dp)
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(400)),
+            modifier = Modifier.align(Alignment.TopEnd)
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFFFF2A42).copy(alpha = 0.95f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
-                shadowElevation = 14.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.FastForward,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+            Text(
+                text = String.format(Locale.ITALY, "%.1fx", boostSpeed),
+                style = AppType.Headline.copy(
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp
+                ),
+                modifier = Modifier
+                    .padding(top = 90.dp, end = 28.dp)
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(8.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.5f),
+                        spotColor = Color.Black.copy(alpha = 0.7f)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = String.format("%.1fx BOOST", boostSpeed),
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-            }
+            )
         }
 
         // LOADING NEXT EPISODE OVERLAY (Seamless transition without exiting)
@@ -792,13 +780,45 @@ fun VideoPlayerScreen(
                                     }
                                 }
 
+                                // Previous Episode Button (se disponibile)
+                                if (episodeNumber > 1 && onPreviousEpisode != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = Color.White.copy(alpha = 0.08f),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                                        modifier = Modifier.iosSpringPress {
+                                            onPositionChanged(currentPos)
+                                            prefs.saveEpisodePosition(episodeNumber, currentPos)
+                                            onPreviousEpisode()
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.SkipPrevious, contentDescription = "Episodio Precedente", tint = Color.White, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Text(
+                                                text = "Ep. ${episodeNumber - 1}",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+
                                 // Next Episode Button
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
                                     color = accentRed,
                                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
                                     shadowElevation = 6.dp,
-                                    modifier = Modifier.iosSpringPress(onClick = onNextEpisode)
+                                    modifier = Modifier.iosSpringPress {
+                                        onPositionChanged(currentPos)
+                                        prefs.saveEpisodePosition(episodeNumber, currentPos)
+                                        onNextEpisode()
+                                    }
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
@@ -811,7 +831,7 @@ fun VideoPlayerScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.SkipNext, contentDescription = "Episodio Successivo", tint = Color.White, modifier = Modifier.size(16.dp))
                                     }
                                 }
                             }

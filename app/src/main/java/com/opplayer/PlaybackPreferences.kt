@@ -45,14 +45,37 @@ class PlaybackPreferences(private val context: Context) {
         }
     }
 
+    fun setLastEpisode(episodeNumber: Int) {
+        prefs.edit().putInt("last_episode", episodeNumber).apply()
+    }
+
     fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putString("last_url", url)
             .putInt("last_episode", episodeNumber)
-            .putLong("last_position_ms", positionMs)
-            .putLong("ep_pos_$episodeNumber", positionMs)
-            .apply()
+            .putLong("ep_last_seen_$episodeNumber", System.currentTimeMillis())
+
+        if (positionMs > 0L) {
+            editor.putLong("last_position_ms", positionMs)
+            editor.putLong("ep_pos_$episodeNumber", positionMs)
+        }
+        editor.apply()
         recordWatchForStreak()
+    }
+
+    fun saveEpisodePosition(episodeNumber: Int, positionMs: Long) {
+        val editor = prefs.edit()
+            .putInt("last_episode", episodeNumber)
+            .putLong("ep_last_seen_$episodeNumber", System.currentTimeMillis())
+        if (positionMs > 0L) {
+            editor.putLong("last_position_ms", positionMs)
+            editor.putLong("ep_pos_$episodeNumber", positionMs)
+        }
+        editor.apply()
+    }
+
+    fun getEpisodeWatchTimestamp(episodeNumber: Int): Long {
+        return prefs.getLong("ep_last_seen_$episodeNumber", 0L)
     }
 
     fun getLastUrl(): String? = prefs.getString("last_url", null)
@@ -79,6 +102,20 @@ class PlaybackPreferences(private val context: Context) {
             current.remove(episode)
         }
         prefs.edit().putStringSet("watched_set", current.map { it.toString() }.toSet()).apply()
+    }
+
+    fun toggleWatched(episode: Int): Boolean {
+        val isWatched = isEpisodeWatched(episode)
+        markEpisodeWatched(episode, !isWatched)
+        return !isWatched
+    }
+
+    fun markWatched(episode: Int) {
+        markEpisodeWatched(episode, true)
+    }
+
+    fun unmarkWatched(episode: Int) {
+        markEpisodeWatched(episode, false)
     }
 
     fun isEpisodeWatched(episode: Int): Boolean {

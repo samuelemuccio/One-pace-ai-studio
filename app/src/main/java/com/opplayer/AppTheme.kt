@@ -2,17 +2,22 @@ package com.opplayer
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.composed
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -25,100 +30,87 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Design System "One Pace Premium"
- * Ispirato a iOS 17/18 — palette ridotta, tipografia a 6 livelli,
- * motion differenziato, haptics universali.
+ * Design System "One Pace Premium" — iOS 27 Liquid Glass style.
+ * Palette ridotta, tipografia a 6 livelli, motion differenziato, haptic universali.
  */
 object AppColors {
-    // Accento principale (rosso iOS System)
-    val Accent        = Color(0xFFFF453A)
-    val AccentSoft    = Color(0x33FF453A)
+    // Un solo accento per schermata — i colori sono usati SPARINGLY
+    val Accent        = Color(0xFFFF453A)  // iOS system red — Home/Player
+    val AccentDim     = Color(0xFFB0281F)
+    val AccentSoft    = Color(0x1AFF453A)  // 10% tint per sfondi
     val AccentGlow    = Color(0x66FF453A)
 
-    // Accenti secondari
-    val Gold          = Color(0xFFFFD60A)
-    val GoldSoft      = Color(0x33FFD60A)
-    val Sky           = Color(0xFF0A84FF)
+    val Gold          = Color(0xFFFFD60A)  // Registro
+    val GoldSoft      = Color(0x1AFFD60A)
+
+    val Sky           = Color(0xFF0A84FF)  // Download
+    val SkySoft       = Color(0x1A0A84FF)
+
+    val Purple        = Color(0xFFBF5AF2)  // Statistiche
+    val PurpleSoft    = Color(0x1ABF5AF2)
+
     val Success       = Color(0xFF30D158)
     val Warning       = Color(0xFFFF9F0A)
-    val Purple        = Color(0xFFBF5AF2)
 
-    // Superfici (iOS-style, scala di grigi puri)
-    val Background    = Color(0xFF000000)
-    val Surface1      = Color(0xFF0D0D0F)   // fondo card
-    val Surface2      = Color(0xFF1C1C1E)   // card base
-    val Surface3      = Color(0xFF2C2C2E)   // card elevata
-    val Surface4      = Color(0xFF3A3A3C)   // card top
+    // Superfici (Liquid Glass — iOS pure grays)
+    val Bg0           = Color(0xFF000000)  // nero puro OLED
+    val Bg1           = Color(0xFF0A0A0C)  // fondo schermata
+    val Glass0        = Color(0x14FFFFFF)  // 8% bianco (overlay su video)
+    val Glass1        = Color(0x1FFFFFFF)  // 12% bianco (card secondaria)
+    val Glass2        = Color(0x2BFFFFFF)  // 17% bianco (card principale)
+    val GlassBorder   = Color(0x33FFFFFF)  // 20% bianco bordo
+    val Scrim         = Color(0xB3000000)  // 70% nero per overlay modali
+
+    // Compatibilità con dialogs e impostazioni
+    val Background    = Bg0
+    val Surface1      = Color(0xFF0D0D0F)
+    val Surface2      = Color(0xFF1C1C1E)
+    val Surface3      = Color(0xFF2C2C2E)
+    val Surface4      = Color(0xFF3A3A3C)
 
     // Testo
     val TextPrimary   = Color(0xFFFFFFFF)
-    val TextSecondary = Color(0xFF8E8E93)   // iOS system gray
-    val TextTertiary  = Color(0xFF48484A)
-    val Separator     = Color(0x1AFFFFFF)   // 10% bianco
+    val TextSecondary = Color(0xB3FFFFFF)  // 70% bianco
+    val TextTertiary  = Color(0x80FFFFFF)  // 50% bianco
+    val TextMuted     = Color(0x4DFFFFFF)  // 30% bianco
 
-    // Overlay / scrim
-    val Scrim         = Color(0xCC000000)
-    val GlassTint     = Color(0x1AFFFFFF)
+    // Separatori
+    val Separator     = Color(0x14FFFFFF)
 }
 
 object AppType {
-    val Display   = TextStyle(
-        fontSize = 34.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.6).sp
-    )
-    val Title     = TextStyle(
-        fontSize = 22.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.3).sp
-    )
-    val Headline  = TextStyle(
-        fontSize = 17.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.2).sp
-    )
-    val Body      = TextStyle(
-        fontSize = 15.sp,
-        fontWeight = FontWeight.Normal,
-        lineHeight = 20.sp
-    )
-    val Subhead   = TextStyle(
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        color = AppColors.TextSecondary
-    )
-    val Caption   = TextStyle(
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
-        color = AppColors.TextTertiary,
-        letterSpacing = 0.2.sp
-    )
-    val BigNumber = TextStyle(
-        fontSize = 34.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.8).sp
-    )
+    val Display   = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp, lineHeight = 38.sp)
+    val Title     = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp, lineHeight = 28.sp)
+    val Headline  = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, lineHeight = 22.sp)
+    val Body      = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp)
+    val Subhead   = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
+    val Caption   = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+    val Mono      = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.sp,
+        fontFeatureSettings = "tnum")  // tabular numbers
+    val BigNumber = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.0).sp,
+        fontFeatureSettings = "tnum")
 }
 
 object AppMotion {
-    // Tap leggero e scattante
     val Tap    = spring<Float>(dampingRatio = 0.72f, stiffness = 600f)
-    // Sheet / pannelli
-    val Sheet  = spring<Float>(dampingRatio = 0.85f, stiffness = 260f)
-    // Transizioni hero
-    val Hero   = tween<Float>(450, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f))
-    // Dock di navigazione
-    val Nav    = spring<Float>(dampingRatio = 0.75f, stiffness = 340f)
-    // Scale tap default
+    val Sheet  = spring<Float>(dampingRatio = 0.88f, stiffness = 280f)
+    val Nav    = spring<Float>(dampingRatio = 0.78f, stiffness = 340f)
+    val Hero   = tween<Float>(500, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f))
+    val Quick  = tween<Float>(180, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1f))
+    val Fade   = tween<Float>(300, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1f))
     val Scale  = spring<Float>(dampingRatio = 0.65f, stiffness = 500f)
 }
 
 object AppShape {
-    val Card     = RoundedCornerShape(22.dp)
-    val CardBig  = RoundedCornerShape(28.dp)
-    val Chip     = RoundedCornerShape(12.dp)
+    val Chip     = RoundedCornerShape(10.dp)
+    val Small    = RoundedCornerShape(14.dp)
+    val Card     = RoundedCornerShape(20.dp)
+    val CardBig  = RoundedCornerShape(26.dp)
+    val Sheet    = RoundedCornerShape(28.dp)
+    val Dock     = RoundedCornerShape(30.dp)
+    val Hero     = RoundedCornerShape(32.dp)
+    val Pill     = RoundedCornerShape(100.dp)
     val Button   = RoundedCornerShape(16.dp)
-    val Dock     = RoundedCornerShape(32.dp)
     val Capsule  = RoundedCornerShape(28.dp)
 }
 
@@ -133,25 +125,23 @@ fun Modifier.iosShadow(
     spotColor = Color.Black.copy(alpha = alpha)
 )
 
-/** Tap con haptic feedback + scale spring */
+/** Tap con haptic feedback + scale spring. Uso: Modifier.hapticPress { onClick() } */
+@Composable
 fun Modifier.hapticPress(
     enabled: Boolean = true,
     scaleDown: Float = 0.96f,
     onClick: () -> Unit
-): Modifier = composed {
+): Modifier {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale = androidx.compose.animation.core.animateFloatAsState(
+    val scale by animateFloatAsState(
         targetValue = if (pressed && enabled) scaleDown else 1f,
-        animationSpec = AppMotion.Scale,
+        animationSpec = AppMotion.Tap,
         label = "hapticScale"
     )
-    this
-        .graphicsLayer {
-            scaleX = scale.value
-            scaleY = scale.value
-        }
+    return this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(
             interactionSource = interactionSource,
             indication = null,
@@ -163,7 +153,7 @@ fun Modifier.hapticPress(
         )
 }
 
-/** Haptic "leggero" per feedback brevi (senza click) */
+/** Haptic "tick" per feedback brevi senza click */
 @Composable
 fun rememberHapticTick(): () -> Unit {
     val haptic = LocalHapticFeedback.current
@@ -171,3 +161,49 @@ fun rememberHapticTick(): () -> Unit {
         { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
     }
 }
+
+/**
+ * GlassSurface — superficie Liquid Glass con bordo sfumato.
+ * Uso semplice, senza Haze. Per il blur reale del backdrop usare hazeEffect().
+ */
+@Composable
+fun GlassSurface(
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = AppShape.Card,
+    intensity: GlassIntensity = GlassIntensity.Medium,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val bgColor = when (intensity) {
+        GlassIntensity.UltraThin -> AppColors.Glass0
+        GlassIntensity.Thin      -> AppColors.Glass1
+        GlassIntensity.Medium    -> AppColors.Glass2
+        GlassIntensity.Thick     -> Color(0x3DFFFFFF)
+    }
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(bgColor)
+            .then(
+                Modifier.borderTopGradient(shape)
+            ),
+        content = content
+    )
+}
+
+enum class GlassIntensity { UltraThin, Thin, Medium, Thick }
+
+/** Bordo superiore sfumato — rim light effetto Apple */
+private fun Modifier.borderTopGradient(shape: androidx.compose.ui.graphics.Shape): Modifier =
+    this.then(
+        border(
+            width = 0.5.dp,
+            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.28f),
+                    Color.White.copy(alpha = 0.04f),
+                    Color.White.copy(alpha = 0.02f)
+                )
+            ),
+            shape = shape
+        )
+    )
