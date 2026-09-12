@@ -1,5 +1,7 @@
 package com.opplayer
-
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
@@ -935,4 +937,3 @@ fun VideoPlayerScreen(
 }
 
 // Import mancante per verticalScroll
-private val rememberScrollState = androidx.compose.foundation.rememberScrollState
