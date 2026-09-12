@@ -66,8 +66,8 @@ object MediasetTimestampProvider {
                 if (perEp != null) {
                     return EpisodeTimestamps(
                         recapEndMs = perEp.optLong("recap_end_ms", 0L),
-                        openingStartMs = perEp.optLong("opening_start_ms", 5000L),
-                        openingEndMs = perEp.optLong("opening_end_ms", 95000L),
+                        openingStartMs = perEp.optLong("opening_start_ms", 0L),
+                        openingEndMs = perEp.optLong("opening_end_ms", 150_000L),
                         endingStartMs = perEp.optLong("ending_start_ms", -1L)
                     )
                 }
@@ -77,8 +77,8 @@ object MediasetTimestampProvider {
                 if (defaults != null) {
                     return EpisodeTimestamps(
                         recapEndMs = defaults.optLong("recap_end_ms", 0L),
-                        openingStartMs = defaults.optLong("opening_start_ms", 5000L),
-                        openingEndMs = defaults.optLong("opening_end_ms", 95000L),
+                        openingStartMs = defaults.optLong("opening_start_ms", 0L),
+                        openingEndMs = defaults.optLong("opening_end_ms", 150_000L),
                         endingStartMs = defaults.optLong("ending_start_ms", -1L)
                     )
                 }
@@ -87,11 +87,11 @@ object MediasetTimestampProvider {
             }
         }
 
-        // 4. Fallback (comportamento attuale: sigla ~3m20s dall'inizio)
+        // 4. Fallback (sigla 2m30s = 150.000 ms)
         return EpisodeTimestamps(
             recapEndMs = 0L,
             openingStartMs = 0L,
-            openingEndMs = 200_000L,
+            openingEndMs = 150_000L,
             endingStartMs = -1L
         )
     }

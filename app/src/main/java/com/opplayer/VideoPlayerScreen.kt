@@ -39,12 +39,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 @Composable
 fun Modifier.iosSpringPress(onClick: (() -> Unit)? = null): Modifier = composed {
@@ -91,6 +93,7 @@ fun VideoPlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val prefs = remember { PlaybackPreferences(context) }
+    val watchTracker = remember { WatchSessionTracker(context) }
 
     val episodeNumber = remember(currentWebUrl) {
         OnePieceHelper.extractEpisodeNumber(currentWebUrl)
@@ -167,27 +170,45 @@ fun VideoPlayerScreen(
         exoPlayer.playWhenReady = true
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (!isDraggingSlider) {
-                currentPos = exoPlayer.currentPosition.coerceAtLeast(0L)
-                bufferedPos = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+    // Listener nativo Media3 — niente polling. Aggiorna lo stato SOLO quando cambia.
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlayingNow: Boolean) {
+                isPlaying = isPlayingNow
+                // Hook del tracker: pausa/riprende il conteggio del tempo
+                if (isPlayingNow) watchTracker.onVideoResumed()
+                else watchTracker.onVideoPaused()
+            }
+            override fun onPlaybackStateChanged(state: Int) {
                 totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-                onPositionChanged(currentPos)
-
-                // Mark episodio come visto quando l'utente supera la soglia
-                // configurabile (default 22:30) O arriva al 90% della durata totale.
-                // Soglia configurabile da SettingsDialog.
-                val watchedThresholdMs = prefs.getWatchedThresholdMs()
-                val isPastFixedThreshold = currentPos >= watchedThresholdMs
-                val isNearEnd = totalDuration > 30_000L &&
-                                currentPos >= (totalDuration * 0.90).toLong()
-                if (isPastFixedThreshold || isNearEnd) {
-                    prefs.markEpisodeWatched(episodeNumber, true)
+            }
+            override fun onEvents(player: Player, events: Player.Events) {
+                bufferedPos = player.bufferedPosition.coerceAtLeast(0L)
+                if (events.contains(Player.EVENT_POSITION_DISCONTINUITY)) {
+                    currentPos = player.currentPosition.coerceAtLeast(0L)
                 }
             }
-            isPlaying = exoPlayer.isPlaying
-            delay(400)
+        }
+        exoPlayer.addListener(listener)
+        onDispose { exoPlayer.removeListener(listener) }
+    }
+
+    // Polling a 1s SOLO quando il video sta andando — 1 wake-up/sec invece di 2.5
+    LaunchedEffect(isPlaying, isDraggingSlider, exoPlayer) {
+        if (!isPlaying || isDraggingSlider) return@LaunchedEffect
+        while (isActive) {
+            currentPos = exoPlayer.currentPosition.coerceAtLeast(0L)
+            onPositionChanged(currentPos)
+
+            // Mark episodio come visto (soglia 22:30 o 90% durata)
+            val watchedThresholdMs = prefs.getWatchedThresholdMs()
+            val isPastFixedThreshold = currentPos >= watchedThresholdMs
+            val isNearEnd = totalDuration > 30_000L &&
+                            currentPos >= (totalDuration * 0.90).toLong()
+            if (isPastFixedThreshold || isNearEnd) {
+                prefs.markEpisodeWatched(episodeNumber, true)
+            }
+            delay(1_000L)
         }
     }
 

@@ -87,6 +87,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.io.File
 import java.util.Locale
 
@@ -378,6 +380,7 @@ class MainActivity : ComponentActivity() {
 
     private var isInPipModeState = mutableStateOf(false)
     private var isPlayerActive = false
+    private var webViewInstance: WebView? = null
 
     // Callback che il VideoPlayerScreen riempie quando è attivo
     var pipPlayPauseCallback: (() -> Unit)? = null
@@ -419,6 +422,7 @@ class MainActivity : ComponentActivity() {
             try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
             pipReceiverRegistered = false
         }
+        // Il tracker viene congelato: WatchSessionTracker.onPause viene chiamato dal player
         super.onStop()
     }
 
@@ -586,6 +590,24 @@ class MainActivity : ComponentActivity() {
         notificationManager.notify(1001, builder.build())
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!isPlayerActive) {
+            try {
+                webViewInstance?.onResume()
+                webViewInstance?.resumeTimers()
+            } catch (_: Exception) {}
+        }
+    }
+
+    override fun onPause() {
+        try {
+            webViewInstance?.onPause()
+            webViewInstance?.pauseTimers()
+        } catch (_: Exception) {}
+        super.onPause()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -612,7 +634,6 @@ class MainActivity : ComponentActivity() {
                 var currentWebUrl by remember { mutableStateOf(savedUrl) }
                 var activeVideoUrl by remember { mutableStateOf<String?>(null) }
                 var detectedVideoUrl by remember { mutableStateOf<String?>(null) }
-                var webViewInstance by remember { mutableStateOf<WebView?>(null) }
                 var startFromPosition by remember { mutableLongStateOf(0L) }
                 var isAutoAdvancing by remember { mutableStateOf(false) }
 
@@ -647,7 +668,9 @@ class MainActivity : ComponentActivity() {
                 var showStreakReminderDialog by remember { mutableStateOf(false) }
                 var showCloudSyncDialog by remember { mutableStateOf(false) }
                 var showSettingsDialog by remember { mutableStateOf(false) }
+                var registroStatsRequestTick by remember { mutableIntStateOf(0) }
                 val downloadManagerHelper = remember { DownloadManagerHelper(this@MainActivity) }
+                val watchTracker = remember { WatchSessionTracker(this@MainActivity) }
 
                 // Cloud & Persistent Vault Manager
                 val cloudSyncManager = remember { CloudSyncManager(this@MainActivity) }
@@ -710,29 +733,36 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val specularBorder = Brush.linearGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.05f))
+                    colors = listOf(Color.White.copy(alpha = 0.18f), Color.White.copy(alpha = 0.04f))
                 )
-                val accentRed = Color(0xFFFF2A42)
-                val goldAccent = Color(0xFFFFD700)
+                val accentRed = AppColors.Accent
+                val goldAccent = AppColors.Gold
 
                 isPlayerActive = activeVideoUrl != null
 
                 LaunchedEffect(activeVideoUrl) {
                     if (activeVideoUrl != null) {
+                        // WebView in background totale: kill rendering + JS pesante
                         webViewInstance?.onPause()
+                        webViewInstance?.pauseTimers()
                         webViewInstance?.evaluateJavascript(
                             """
                             (function() {
-                                var media = document.querySelectorAll('video, audio');
-                                for (var i = 0; i < media.length; i++) {
-                                    media[i].pause();
-                                    media[i].muted = true;
-                                }
+                                try {
+                                    var media = document.querySelectorAll('video, audio');
+                                    for (var i = 0; i < media.length; i++) {
+                                        media[i].pause();
+                                        media[i].muted = true;
+                                        media[i].removeAttribute('src');
+                                        try { media[i].load(); } catch(e){}
+                                    }
+                                } catch(e){}
                             })();
                             """.trimIndent(), null
                         )
-                    } else {
+                    } else if (!isBrowserOpen) {
                         webViewInstance?.onResume()
+                        webViewInstance?.resumeTimers()
                     }
                 }
 
@@ -779,6 +809,9 @@ class MainActivity : ComponentActivity() {
                     startFromPosition = fromPos
                     val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, targetEp)
                     currentWebUrl = epUrl
+
+                    // Avvia tracking della sessione per statistiche
+                    watchTracker.startEpisode(targetEp)
 
                     val updatedStreak = prefs.recordWatchForStreak()
                     dailyStreak = updatedStreak
@@ -839,13 +872,13 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
-                    containerColor = Color(0xFF070709),
+                    containerColor = AppColors.Background,
                     contentWindowInsets = WindowInsets(0, 0, 0, 0)
                 ) { _ ->
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFF070709))
+                            .background(AppColors.Background)
                     ) {
                         // Background WebView for scraping & video detection
                         AndroidView(
@@ -1047,16 +1080,13 @@ class MainActivity : ComponentActivity() {
                                                     ) {
                                                         Text(
                                                             text = "ONE PIECE • CINEMA",
-                                                            color = accentRed,
-                                                            fontWeight = FontWeight.Black,
-                                                            fontSize = 11.sp,
-                                                            letterSpacing = 2.sp
+                                                            style = AppType.Caption.copy(color = AppColors.Accent),
+                                                            letterSpacing = 2.sp,
+                                                            fontWeight = FontWeight.Black
                                                         )
                                                         Text(
                                                             text = "Rotta Maggiore",
-                                                            color = Color.White,
-                                                            fontWeight = FontWeight.Bold,
-                                                            fontSize = 24.sp
+                                                            style = AppType.Title.copy(color = AppColors.TextPrimary)
                                                         )
                                                     }
 
@@ -1110,13 +1140,13 @@ class MainActivity : ComponentActivity() {
                                                 Surface(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
+                                                        .iosShadow(radius = 24.dp, alpha = 0.45f)
                                                         .iosSpringClick {
                                                             playEpisode(currentEpisodeNumber, savedPosition)
                                                         },
-                                                    shape = RoundedCornerShape(28.dp),
-                                                    color = Color(0xDB181822),
-                                                    border = BorderStroke(1.dp, specularBorder),
-                                                    shadowElevation = 16.dp
+                                                    shape = AppShape.CardBig,
+                                                    color = AppColors.Surface2,
+                                                    border = BorderStroke(1.dp, AppColors.Separator)
                                                 ) {
                                                     Column(modifier = Modifier.padding(22.dp)) {
                                                         Row(
@@ -1192,13 +1222,11 @@ class MainActivity : ComponentActivity() {
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Surface(
-                                                                shape = RoundedCornerShape(18.dp),
-                                                                color = accentRed,
-                                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                                                                shadowElevation = 10.dp,
+                                                                shape = AppShape.Button,
+                                                                color = AppColors.Accent,
                                                                 modifier = Modifier
                                                                     .weight(1f)
-                                                                    .iosSpringClick {
+                                                                    .hapticPress {
                                                                         playEpisode(currentEpisodeNumber, savedPosition)
                                                                     }
                                                             ) {
@@ -1523,11 +1551,27 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 1 -> {
-                                    // TAB 1: REGISTRO DI BORDO 3D COMPLETAMENTE RIORGANIZZATO
-                                    val stats = remember(watchedEpisodes) {
-                                        OnePieceHelper.calculateStats(watchedEpisodes.size)
+                                    // TAB 1: REGISTRO DI BORDO
+                                    // Sub-tab: 0 = Saghe, 1 = Statistiche
+                                    var registroSubTab by remember { mutableIntStateOf(0) }
+                                    LaunchedEffect(registroStatsRequestTick) {
+                                        if (registroStatsRequestTick > 0) {
+                                            registroSubTab = 1
+                                        }
                                     }
-                                    var filterSelection by remember { mutableIntStateOf(0) }
+
+                                    if (registroSubTab == 1) {
+                                        StatsTabContent(
+                                            prefs = prefs,
+                                            watchTracker = watchTracker,
+                                            watchedEpisodes = watchedEpisodes,
+                                            onBack = { registroSubTab = 0 }
+                                        )
+                                    } else {
+                                        val stats = remember(watchedEpisodes) {
+                                            OnePieceHelper.calculateStats(watchedEpisodes.size)
+                                        }
+                                        var filterSelection by remember { mutableIntStateOf(0) }
 
                                     // Dynamic Pirate Rank Title based on episodes watched (Typography badge, no playful emoji)
                                     val pirateRank = remember(watchedEpisodes.size) {
@@ -1595,18 +1639,54 @@ class MainActivity : ComponentActivity() {
                                                             .weight(1f, fill = false)
                                                             .padding(end = 12.dp)
                                                     ) {
-                                                        Text("DIARIO DI BORDO", color = accentRed, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 2.sp)
-                                                        Text("Registro Saghe", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                                                        Text(
+                                                            "DIARIO DI BORDO",
+                                                            style = AppType.Caption.copy(color = AppColors.Accent),
+                                                            letterSpacing = 2.sp,
+                                                            fontWeight = FontWeight.Black
+                                                        )
+                                                        Text(
+                                                            "Registro Saghe",
+                                                            style = AppType.Title.copy(color = AppColors.TextPrimary)
+                                                        )
                                                     }
 
-                                                    IconButton(
-                                                        onClick = { showSettingsDialog = true },
-                                                        modifier = Modifier
-                                                            .size(38.dp)
-                                                            .clip(CircleShape)
-                                                            .background(Color.White.copy(alpha = 0.10f))
-                                                    ) {
-                                                        Icon(Icons.Default.Settings, contentDescription = "Impostazioni", tint = Color.White, modifier = Modifier.size(19.dp))
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        // Pulsante Statistiche
+                                                        IconButton(
+                                                            onClick = {
+                                                                // Segnale al sub-tab tramite un contatore
+                                                                registroStatsRequestTick++
+                                                            },
+                                                            modifier = Modifier
+                                                                .size(38.dp)
+                                                                .clip(CircleShape)
+                                                                .background(AppColors.AccentSoft)
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Default.Analytics,
+                                                                contentDescription = "Statistiche",
+                                                                tint = AppColors.Accent,
+                                                                modifier = Modifier.size(19.dp)
+                                                            )
+                                                        }
+
+                                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                                        IconButton(
+                                                            onClick = { showSettingsDialog = true },
+                                                            modifier = Modifier
+                                                                .size(38.dp)
+                                                                .clip(CircleShape)
+                                                                .background(AppColors.Surface3)
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Default.Settings,
+                                                                contentDescription = "Impostazioni",
+                                                                tint = AppColors.TextPrimary,
+                                                                modifier = Modifier.size(19.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
 
@@ -2121,6 +2201,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+                            }
 
                                 2 -> {
                                     // TAB 2: DOWNLOAD OFFLINE MODERNO (720p/1080p, Batch Download, Progress Real-Time, Cancel Reale)
@@ -2332,8 +2413,8 @@ class MainActivity : ComponentActivity() {
                                             Brush.verticalGradient(
                                                 listOf(
                                                     Color.Transparent,
-                                                    Color(0x99070709),
-                                                    Color(0xF5070709)
+                                                    AppColors.Background.copy(alpha = 0.70f),
+                                                    AppColors.Background
                                                 )
                                             )
                                         )
@@ -2347,11 +2428,12 @@ class MainActivity : ComponentActivity() {
                                         .align(Alignment.BottomCenter)
                                 ) {
                                     Surface(
-                                        shape = RoundedCornerShape(32.dp),
-                                        color = Color(0xF8111116),
-                                        border = BorderStroke(1.dp, specularBorder),
-                                        shadowElevation = 24.dp,
-                                        modifier = Modifier.fillMaxWidth()
+                                        shape = AppShape.Capsule,
+                                        color = AppColors.Surface2.copy(alpha = 0.94f),
+                                        border = BorderStroke(1.dp, AppColors.Separator),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .iosShadow(radius = 20.dp, alpha = 0.5f)
                                     ) {
                                         data class NavItem(val tabIndex: Int, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
                                         val items = remember {
@@ -2434,23 +2516,11 @@ class MainActivity : ComponentActivity() {
                                                     .align(Alignment.CenterStart)
                                                     .clip(dropletShape)
                                                     .background(
-                                                        Brush.horizontalGradient(
-                                                            listOf(
-                                                                accentRed.copy(alpha = 0.32f),
-                                                                Color(0xFFFF3333).copy(alpha = 0.22f),
-                                                                accentRed.copy(alpha = 0.36f)
-                                                            )
-                                                        )
+                                                        AppColors.AccentSoft
                                                     )
                                                     .border(
-                                                        width = 1.2.dp,
-                                                        brush = Brush.horizontalGradient(
-                                                            listOf(
-                                                                accentRed.copy(alpha = 0.90f),
-                                                                Color(0xFFFF5555).copy(alpha = 0.65f),
-                                                                accentRed.copy(alpha = 0.95f)
-                                                            )
-                                                        ),
+                                                        width = 1.dp,
+                                                        color = AppColors.Accent.copy(alpha = 0.40f),
                                                         shape = dropletShape
                                                     )
                                             ) {
@@ -3297,6 +3367,12 @@ class MainActivity : ComponentActivity() {
                             currentEpisode = currentEpisodeNumber,
                             dailyStreak = dailyStreak,
                             watchedCount = watchedEpisodes.size,
+                            watchTracker = watchTracker,
+                            onOpenStats = {
+                                showSettingsDialog = false
+                                registroStatsRequestTick++
+                                currentTab = 1
+                            },
                             onRestoreJsonRequested = {
                                 showImportDialog = true
                             },
@@ -3395,6 +3471,10 @@ class MainActivity : ComponentActivity() {
                                     savedPosition = pos
                                 },
                                 onClose = {
+                                    // Chiudi sessione di visione
+                                    watchTracker.endEpisode(
+                                        markCompleted = prefs.isEpisodeWatched(currentEpisodeNumber)
+                                    )
                                     // Sincronizza lo stato della Home con l'ultimo salvataggio
                                     savedPosition = prefs.getLastPositionMs()
                                     currentEpisodeNumber = prefs.getLastEpisode()

@@ -11,7 +11,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,7 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +37,8 @@ fun SettingsDialog(
     currentEpisode: Int,
     dailyStreak: Int,
     watchedCount: Int,
+    watchTracker: WatchSessionTracker? = null,
+    onOpenStats: (() -> Unit)? = null,
     onRestoreJsonRequested: () -> Unit,
     onSyncSuccess: (String) -> Unit
 ) {
@@ -48,13 +49,8 @@ fun SettingsDialog(
     val scrollState = rememberScrollState()
 
     var isStreakNotifyEnabled by remember { mutableStateOf(prefs.isStreakReminderEnabled()) }
-
-    val specularBorder = Brush.linearGradient(
-        listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.06f))
-    )
-    val accentRed = Color(0xFFFF2A42)
-    val goldAccent = Color(0xFFFFD700)
-    val skyBlue = Color(0xFF32ADE6)
+    var showResetTrackingConfirm by remember { mutableStateOf(false) }
+    var showChangeStartDateDialog by remember { mutableStateOf(false) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -63,7 +59,7 @@ fun SettingsDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.75f))
+                .background(AppColors.Scrim)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -80,17 +76,16 @@ fun SettingsDialog(
                         indication = null,
                         onClick = {}
                     ),
-                shape = RoundedCornerShape(30.dp),
-                color = Color(0xF2141624),
-                border = BorderStroke(1.dp, specularBorder),
-                shadowElevation = 26.dp
+                shape = AppShape.CardBig,
+                color = AppColors.Surface2,
+                border = BorderStroke(1.dp, AppColors.Separator)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(22.dp)
                 ) {
-                    // Header
+                    // Header iOS style
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -100,33 +95,49 @@ fun SettingsDialog(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .background(skyBlue.copy(alpha = 0.20f), CircleShape),
+                                    .clip(CircleShape)
+                                    .background(AppColors.Surface3),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.CloudSync, contentDescription = null, tint = skyBlue, modifier = Modifier.size(22.dp))
+                                Icon(
+                                    Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = AppColors.Accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Centro Dati & Impostazioni",
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
+                                    text = "PREFERENZE",
+                                    style = AppType.Caption.copy(color = AppColors.Accent),
+                                    letterSpacing = 1.5.sp,
+                                    fontWeight = FontWeight.Black
                                 )
                                 Text(
-                                    text = "Cloud, Backup, Notifiche e Download",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
+                                    text = "Centro Impostazioni",
+                                    style = AppType.Headline.copy(color = AppColors.TextPrimary)
                                 )
                             }
                         }
 
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.Gray)
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.Surface3)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Chiudi",
+                                tint = AppColors.TextPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     // Scrollable content
                     Column(
@@ -134,11 +145,18 @@ fun SettingsDialog(
                             .weight(1f)
                             .verticalScroll(scrollState)
                     ) {
-                        // SECTION 1: BACKUP & RIPRISTINO DATI (JSON LOCALE PERSISTENTE)
+                        // SECTION 0: STATISTICHE DI VIAGGIO
+                        Text(
+                            text = "STATISTICHE & VIAGGIO",
+                            style = AppType.Caption.copy(color = AppColors.TextTertiary),
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = skyBlue.copy(alpha = 0.10f),
-                            border = BorderStroke(1.dp, skyBlue.copy(alpha = 0.35f)),
+                            shape = AppShape.Card,
+                            color = AppColors.Surface1,
+                            border = BorderStroke(1.dp, AppColors.Separator),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -148,35 +166,137 @@ fun SettingsDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Storage, contentDescription = null, tint = skyBlue, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            Icons.Default.Analytics,
+                                            contentDescription = null,
+                                            tint = AppColors.Accent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = "Backup & Ripristino Dati",
-                                            color = skyBlue,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
+                                            text = "Analytics di Viaggio",
+                                            style = AppType.Headline.copy(color = AppColors.TextPrimary)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Visualizza tempo attivo reale per episodio, stime di completamento per ritmo e tempo risparmiato.",
+                                    style = AppType.Subhead.copy(color = AppColors.TextSecondary)
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        onOpenStats?.invoke()
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Accent),
+                                    shape = AppShape.Button
+                                ) {
+                                    Icon(
+                                        Icons.Default.BarChart,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Apri Statistiche di Viaggio",
+                                        style = AppType.Subhead.copy(color = Color.White),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (watchTracker != null) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { showChangeStartDateDialog = true },
+                                            modifier = Modifier.weight(1f),
+                                            shape = AppShape.Button,
+                                            border = BorderStroke(1.dp, AppColors.Separator)
+                                        ) {
+                                            Text(
+                                                "Data Inizio",
+                                                style = AppType.Caption.copy(color = AppColors.TextPrimary),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { showResetTrackingConfirm = true },
+                                            modifier = Modifier.weight(1f),
+                                            shape = AppShape.Button,
+                                            border = BorderStroke(1.dp, AppColors.Separator)
+                                        ) {
+                                            Text(
+                                                "Reset Dati",
+                                                style = AppType.Caption.copy(color = AppColors.Accent),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // SECTION 1: BACKUP & RIPRISTINO DATI
+                        Text(
+                            text = "DATI E BACKUP",
+                            style = AppType.Caption.copy(color = AppColors.TextTertiary),
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+                        Surface(
+                            shape = AppShape.Card,
+                            color = AppColors.Surface1,
+                            border = BorderStroke(1.dp, AppColors.Separator),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Storage,
+                                            contentDescription = null,
+                                            tint = AppColors.Sky,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Backup Locale (JSON)",
+                                            style = AppType.Headline.copy(color = AppColors.TextPrimary)
                                         )
                                     }
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = skyBlue.copy(alpha = 0.20f)
+                                        shape = AppShape.Chip,
+                                        color = AppColors.Sky.copy(alpha = 0.15f)
                                     ) {
                                         Text(
-                                            text = "Locale",
-                                            color = skyBlue,
-                                            fontSize = 9.sp,
+                                            text = "$watchedCount ep",
+                                            style = AppType.Caption.copy(color = AppColors.Sky),
                                             fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Salvataggio persistente sul dispositivo ($watchedCount episodi registrati). Puoi copiare il codice JSON per salvarlo altrove o incollare una stringa salvata per ripristinare tutti i tuoi dati.",
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
+                                    text = "Copia la stringa di salvataggio negli appunti per esportarla altrove o incolla un salvataggio precedente.",
+                                    style = AppType.Subhead.copy(color = AppColors.TextSecondary)
                                 )
 
                                 Spacer(modifier = Modifier.height(14.dp))
@@ -200,35 +320,42 @@ fun SettingsDialog(
                                             Toast.makeText(context, "Codice JSON copiato negli appunti! 📋", Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.weight(1f),
-                                        colors = ButtonDefaults.buttonColors(containerColor = skyBlue),
-                                        shape = RoundedCornerShape(12.dp)
+                                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Surface3),
+                                        shape = AppShape.Button
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.Black)
+                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp), tint = AppColors.TextPrimary)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copia Backup", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Copia", style = AppType.Subhead.copy(color = AppColors.TextPrimary), fontWeight = FontWeight.Bold)
                                     }
 
                                     OutlinedButton(
                                         onClick = onRestoreJsonRequested,
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        border = BorderStroke(1.dp, skyBlue.copy(alpha = 0.5f))
+                                        shape = AppShape.Button,
+                                        border = BorderStroke(1.dp, AppColors.Separator)
                                     ) {
-                                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(15.dp), tint = skyBlue)
+                                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(15.dp), tint = AppColors.TextPrimary)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Ripristina", color = skyBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Ripristina", style = AppType.Subhead.copy(color = AppColors.TextPrimary), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                        // SECTION 2: NOTIFICHE REALI STREAK
+                        // SECTION 2: PROMEMORIA SERIE (STREAK)
+                        Text(
+                            text = "NOTIFICHE",
+                            style = AppType.Caption.copy(color = AppColors.TextTertiary),
+                            letterSpacing = 1.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0x22FF2A42),
-                            border = BorderStroke(1.dp, accentRed.copy(alpha = 0.35f)),
+                            shape = AppShape.Card,
+                            color = AppColors.Surface1,
+                            border = BorderStroke(1.dp, AppColors.Separator),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -238,9 +365,12 @@ fun SettingsDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = accentRed, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Promemoria Serie (Streak)", color = accentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = AppColors.Gold, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Promemoria Serie",
+                                            style = AppType.Headline.copy(color = AppColors.TextPrimary)
+                                        )
                                     }
                                     Switch(
                                         checked = isStreakNotifyEnabled,
@@ -255,147 +385,35 @@ fun SettingsDialog(
                                                 Toast.makeText(context, "Promemoria streak disattivato", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = accentRed, checkedTrackColor = accentRed.copy(alpha = 0.4f))
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = AppColors.Accent,
+                                            uncheckedThumbColor = AppColors.TextSecondary,
+                                            uncheckedTrackColor = AppColors.Surface3
+                                        )
                                     )
                                 }
 
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "Ricevi un avviso sul telefono se la tua serie di $dailyStreak giorni rischia di scadere.",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
+                                    style = AppType.Subhead.copy(color = AppColors.TextSecondary)
                                 )
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                                Button(
+                                OutlinedButton(
                                     onClick = {
                                         prefs.sendTestNotification(dailyStreak, currentEpisode)
-                                        Toast.makeText(context, "Notifica inviata sul telefono! Controlla la tendina 🔔", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Notifica inviata sul telefono! 🔔", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = accentRed.copy(alpha = 0.35f)),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = AppShape.Button,
+                                    border = BorderStroke(1.dp, AppColors.Separator)
                                 ) {
-                                    Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                    Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = AppColors.TextPrimary, modifier = Modifier.size(15.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Testa Notifica Ora sul Telefono", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // SECTION 3: QUALITÀ DOWNLOAD & MEMORIA
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color.White.copy(alpha = 0.05f),
-                            border = BorderStroke(1.dp, specularBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Download Sorgente & Riproduzione",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "I video vengono scaricati alla massima risoluzione nativa offerta dal provider video anime originale (stream MP4 diretto) senza compressioni degradanti.",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color.White.copy(alpha = 0.05f),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.FastForward, contentDescription = null, tint = accentRed, modifier = Modifier.size(20.dp))
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text("Pulsante Salto Rapido nel Player", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                            Text("Nel player integrato trovi il tasto rapido '+85s' per saltare sigla e riassunto con un solo tocco.", color = Color.Gray, fontSize = 10.sp)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // SECTION 4: BACKUP & RIPRISTINO MANUALE
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color.White.copy(alpha = 0.05f),
-                            border = BorderStroke(1.dp, specularBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "📋 Backup Manuale Locale (File JSON)",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "Puoi copiare la stringa di backup da incollare altrove o ripristinare un backup precedente.",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            val json = OnePieceHelper.exportToJson(
-                                                watched = prefs.getWatchedEpisodes(),
-                                                favorites = prefs.getFavoriteEpisodes(),
-                                                lastEp = prefs.getLastEpisode(),
-                                                lastPos = prefs.getLastPositionMs(),
-                                                streak = prefs.getStreak()
-                                            )
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            val clip = ClipData.newPlainText("OnePiece_Backup", json)
-                                            clipboard.setPrimaryClip(clip)
-                                            Toast.makeText(context, "Codice JSON copiato negli appunti! 📋", Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copia JSON", color = Color.White, fontSize = 11.sp)
-                                    }
-
-                                    Button(
-                                        onClick = onRestoreJsonRequested,
-                                        modifier = Modifier.weight(1f),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(Icons.Default.FileOpen, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Ripristina", color = Color.White, fontSize = 11.sp)
-                                    }
+                                    Text("Testa Notifica sul Telefono", style = AppType.Subhead.copy(color = AppColors.TextPrimary), fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -403,5 +421,89 @@ fun SettingsDialog(
                 }
             }
         }
+    }
+
+    // Modal di conferma reset dati tracciamento
+    if (showResetTrackingConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetTrackingConfirm = false },
+            title = { Text("Reset Statistiche", style = AppType.Headline) },
+            text = {
+                Text(
+                    "Vuoi azzerare le metriche di tempo attivo per le sessioni registrate? La lista degli episodi visti e i salvataggi NON verranno toccati.",
+                    style = AppType.Body
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        watchTracker?.clearAll()
+                        showResetTrackingConfirm = false
+                        Toast.makeText(context, "Metriche tracciamento azzerate", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Azzera", color = AppColors.Accent, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetTrackingConfirm = false }) {
+                    Text("Annulla", color = AppColors.TextSecondary)
+                }
+            },
+            containerColor = AppColors.Surface2,
+            shape = AppShape.Card
+        )
+    }
+
+    // Modal impostazione rapida data inizio viaggio
+    if (showChangeStartDateDialog) {
+        AlertDialog(
+            onDismissRequest = { showChangeStartDateDialog = false },
+            title = { Text("Data Inizio Viaggio", style = AppType.Headline) },
+            text = {
+                Column {
+                    Text(
+                        "Seleziona da quanti giorni segui One Piece per calcolare la corretta media di episodi al giorno:",
+                        style = AppType.Body
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    listOf(
+                        "1 mese fa (30 giorni)" to 30,
+                        "3 mesi fa (90 giorni)" to 90,
+                        "6 mesi fa (180 giorni)" to 180,
+                        "1 anno fa (365 giorni)" to 365
+                    ).forEach { (label, days) ->
+                        Surface(
+                            shape = AppShape.Button,
+                            color = AppColors.Surface3,
+                            border = BorderStroke(1.dp, AppColors.Separator),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    watchTracker?.setCustomStartDate(days)
+                                    showChangeStartDateDialog = false
+                                    Toast.makeText(context, "Data inizio aggiornata a $days giorni fa!", Toast.LENGTH_SHORT).show()
+                                }
+                        ) {
+                            Text(
+                                text = label,
+                                style = AppType.Subhead.copy(color = AppColors.TextPrimary),
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showChangeStartDateDialog = false }) {
+                    Text("Chiudi", color = AppColors.TextSecondary)
+                }
+            },
+            containerColor = AppColors.Surface2,
+            shape = AppShape.Card
+        )
     }
 }
