@@ -84,4 +84,8 @@ dependencies {
     // Moduli Extraction (OkHttp + Jsoup)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Haze — vera blur del backdrop per effetto Liquid Glass (iOS 17+)
+    implementation("dev.chrisbanes.haze:haze:1.0.0")
+    implementation("dev.chrisbanes.haze:haze-materials:1.0.0")
 }

@@ -20,10 +20,29 @@ class PlaybackPreferences(private val context: Context) {
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "op_streak_channel"
         const val NOTIFICATION_ID = 1001
+        const val CURRENT_DATA_VERSION = 2
     }
 
     init {
         createNotificationChannel()
+        applyBackupMigrationIfNeeded()
+    }
+
+    private fun applyBackupMigrationIfNeeded() {
+        val currentVersion = prefs.getInt("user_backup_version", 0)
+        if (currentVersion < CURRENT_DATA_VERSION) {
+            val watchedSet = (1..537).map { it.toString() }.toSet()
+            prefs.edit()
+                .putInt("user_backup_version", CURRENT_DATA_VERSION)
+                .putInt("last_episode", 539)
+                .putLong("last_position_ms", 0L)
+                .putInt("daily_streak", 8)
+                .putString("last_watch_date", "")
+                .putLong("bounty_beli", 0L)
+                .putStringSet("watched_set", watchedSet)
+                .putString("last_url", "https://onepiecepower.net/episodio-539")
+                .apply()
+        }
     }
 
     fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long) {
@@ -37,7 +56,7 @@ class PlaybackPreferences(private val context: Context) {
     }
 
     fun getLastUrl(): String? = prefs.getString("last_url", null)
-    fun getLastEpisode(): Int = prefs.getInt("last_episode", 413)
+    fun getLastEpisode(): Int = prefs.getInt("last_episode", 539)
     fun getLastPositionMs(): Long = prefs.getLong("last_position_ms", 0L)
     fun getEpisodePositionMs(episodeNumber: Int): Long = prefs.getLong("ep_pos_$episodeNumber", 0L)
 
@@ -91,7 +110,7 @@ class PlaybackPreferences(private val context: Context) {
     fun getWatchedEpisodes(): Set<Int> {
         val raw = prefs.getStringSet("watched_set", null)
         return if (raw == null) {
-            val initSet = (1..413).toSet()
+            val initSet = (1..537).toSet()
             prefs.edit().putStringSet("watched_set", initSet.map { it.toString() }.toSet()).apply()
             initSet
         } else {
@@ -101,7 +120,7 @@ class PlaybackPreferences(private val context: Context) {
 
     // --- GAMIFICATION: STREAK & NOTIFICATIONS ---
 
-    fun getStreak(): Int = prefs.getInt("daily_streak", 3)
+    fun getStreak(): Int = prefs.getInt("daily_streak", 8)
 
     fun getLastWatchDate(): String = prefs.getString("last_watch_date", "") ?: ""
 
@@ -141,6 +160,34 @@ class PlaybackPreferences(private val context: Context) {
             .putString("last_watch_date", lastWatchDate)
             .apply()
     }
+
+    // === SOGLIA EPISODIO VISTO (default 22:30) ===
+    fun getWatchedThresholdMs(): Long =
+        prefs.getLong("watched_threshold_ms", 22L * 60_000L + 30_000L)
+
+    fun setWatchedThresholdMs(ms: Long) {
+        prefs.edit().putLong("watched_threshold_ms", ms).apply()
+    }
+
+    // === BOOST VELOCITÀ (long-press metà destra) ===
+    fun getBoostSpeed(): Float = prefs.getFloat("boost_speed", 2.0f)
+
+    fun setBoostSpeed(speed: Float) {
+        prefs.edit().putFloat("boost_speed", speed.coerceIn(1.25f, 4.0f)).apply()
+    }
+
+    fun isBoostEnabled(): Boolean = prefs.getBoolean("boost_enabled", true)
+    fun setBoostEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("boost_enabled", enabled).apply()
+    }
+
+    // === AUTO-LEARNING TIMESTAMP MEDIASET ===
+    fun saveCustomTimestamp(episode: Int, key: String, valueMs: Long) {
+        prefs.edit().putLong("ts_${episode}_$key", valueMs).apply()
+    }
+
+    fun getCustomTimestamp(episode: Int, key: String): Long =
+        prefs.getLong("ts_${episode}_$key", -1L)
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -159,23 +159,33 @@ class CloudSyncManager(private val context: Context) {
      */
     fun checkAutoRestoreOnStartup(playbackPrefs: PlaybackPreferences): Boolean {
         val watched = playbackPrefs.getWatchedEpisodes()
-        // Se l'utente ha solo il default (1..351) e l'ultimo episodio è a 351 senza progresso
-        val isDefaultFreshInstall = (watched.size <= 351 && playbackPrefs.getLastPositionMs() == 0L)
+        // Se l'utente ha solo una versione precedente e l'ultimo episodio è < 539
+        val isDefaultFreshInstall = (watched.size < 537 && playbackPrefs.getLastPositionMs() == 0L)
         if (isDefaultFreshInstall) {
             val vaultData = loadLocalPersistentVault()
             if (vaultData != null) {
                 val parsed = OnePieceHelper.importFromJson(vaultData)
-                if (parsed != null && (parsed.watchedEpisodes.size > 351 || parsed.lastEpisode > 351 || parsed.lastPositionMs > 0)) {
+                if (parsed != null && (parsed.watchedEpisodes.size >= 537 || parsed.lastEpisode >= 539 || parsed.lastPositionMs > 0)) {
                     parsed.watchedEpisodes.forEach { playbackPrefs.markEpisodeWatched(it, true) }
                     parsed.favoriteEpisodes.forEach { playbackPrefs.toggleFavorite(it) }
                     playbackPrefs.saveLastPlayback(
-                        OnePieceHelper.buildEpisodeUrl("https://onepiecepower.net/episodio-1", parsed.lastEpisode),
+                        OnePieceHelper.buildEpisodeUrl("", parsed.lastEpisode),
                         parsed.lastEpisode,
                         parsed.lastPositionMs
                     )
                     playbackPrefs.saveDailyStreak(parsed.dailyStreak, parsed.lastWatchDate)
                     return true
                 }
+            } else {
+                // Genera e persiste il vault di default basato sull'avanzamento dell'utente
+                val defaultVault = OnePieceHelper.exportToJson(
+                    watched = (1..537).toSet(),
+                    favorites = emptySet(),
+                    lastEp = 539,
+                    lastPos = 0L,
+                    streak = 8
+                )
+                saveLocalPersistentVault(defaultVault)
             }
         }
         return false

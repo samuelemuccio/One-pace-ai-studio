@@ -198,7 +198,7 @@ object OnePieceHelper {
         favorites: Set<Int>,
         lastEp: Int,
         lastPos: Long,
-        streak: Int = 3,
+        streak: Int = 8,
         lastWatchDate: String = "",
         bountyBeli: Long = 0L
     ): String {
@@ -224,9 +224,9 @@ object OnePieceHelper {
     fun importFromJson(jsonString: String): BackupData? {
         return try {
             val json = JSONObject(jsonString)
-            val lastEp = json.optInt("lastEpisode", 351)
+            val lastEp = json.optInt("lastEpisode", 539)
             val lastPos = json.optLong("lastPositionMs", 0L)
-            val streak = json.optInt("dailyStreak", 1)
+            val streak = json.optInt("dailyStreak", 8)
             val lastWatchDate = json.optString("lastWatchDate", "")
             val bountyBeli = json.optLong("bountyBeli", 0L)
 

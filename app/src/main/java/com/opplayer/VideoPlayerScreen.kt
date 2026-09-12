@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,6 +107,19 @@ fun VideoPlayerScreen(
 
     var isLandscape by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
+    // Boost velocità: long-press sulla metà destra del video
+    var isBoosting by remember { mutableStateOf(false) }
+    var boostSpeed by remember { mutableFloatStateOf(prefs.getBoostSpeed()) }
+    val isBoostEnabled = remember { prefs.isBoostEnabled() }
+
+    // Timestamp Mediaset (risoluzione: custom utente -> JSON per ep -> default saga -> fallback)
+    val mediasetTs = remember(episodeNumber) {
+        MediasetTimestampProvider.getForEpisode(context, episodeNumber)
+    }
+    var currentOpeningEnd by remember(episodeNumber) {
+        mutableLongStateOf(mediasetTs.openingEndMs)
+    }
+
     var currentPos by remember { mutableLongStateOf(0L) }
     var bufferedPos by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
@@ -113,6 +128,7 @@ fun VideoPlayerScreen(
 
     var skipFeedbackText by remember { mutableStateOf<String?>(null) }
     var skipFeedbackIsForward by remember { mutableStateOf(true) }
+    var skipFeedbackSeq by remember { mutableIntStateOf(0) }
 
     val specularBorder = Brush.linearGradient(
         colors = listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.06f))
@@ -159,10 +175,14 @@ fun VideoPlayerScreen(
                 totalDuration = exoPlayer.duration.coerceAtLeast(0L)
                 onPositionChanged(currentPos)
 
-                // Mark episode as watched if user reaches 21 minutes (ignoring outro) or 85% of total
-                val isPast21Min = currentPos >= 21 * 60 * 1000L
-                val isPast85Percent = totalDuration > 30_000L && (currentPos.toDouble() / totalDuration >= 0.85)
-                if (isPast21Min || isPast85Percent) {
+                // Mark episodio come visto quando l'utente supera la soglia
+                // configurabile (default 22:30) O arriva al 90% della durata totale.
+                // Soglia configurabile da SettingsDialog.
+                val watchedThresholdMs = prefs.getWatchedThresholdMs()
+                val isPastFixedThreshold = currentPos >= watchedThresholdMs
+                val isNearEnd = totalDuration > 30_000L &&
+                                currentPos >= (totalDuration * 0.90).toLong()
+                if (isPastFixedThreshold || isNearEnd) {
                     prefs.markEpisodeWatched(episodeNumber, true)
                 }
             }
@@ -181,16 +201,46 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Auto-hide skip feedback
-    LaunchedEffect(skipFeedbackText) {
-        if (skipFeedbackText != null) {
-            delay(750)
+    // Auto-hide skip feedback — RESETTO con contatore di sequenza
+    // per evitare il bug del timer che non si resetta su tap ravvicinati
+    LaunchedEffect(skipFeedbackSeq) {
+        if (skipFeedbackSeq > 0) {
+            delay(800)
             skipFeedbackText = null
         }
     }
 
     DisposableEffect(Unit) {
         onDispose { exoPlayer.release() }
+    }
+
+    // Registra i callback per le azioni PiP (Play/Pause, -10s, +10s)
+    DisposableEffect(Unit) {
+        val act = context as? MainActivity
+        act?.pipPlayPauseCallback = {
+            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+        }
+        act?.pipForwardCallback = {
+            val target = (exoPlayer.currentPosition + 10_000L)
+                .coerceAtMost(exoPlayer.duration.coerceAtLeast(0L))
+            exoPlayer.seekTo(target)
+        }
+        act?.pipRewindCallback = {
+            val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
+            exoPlayer.seekTo(target)
+        }
+        onDispose {
+            act?.pipPlayPauseCallback = null
+            act?.pipForwardCallback = null
+            act?.pipRewindCallback = null
+        }
+    }
+
+    // Aggiorna le azioni PiP quando cambia play/pause durante PiP
+    LaunchedEffect(isPlaying, isInPipMode) {
+        if (isInPipMode) {
+            (context as? MainActivity)?.enterPipMode(isPlaying)
+        }
     }
 
     if (isInPipMode) {
@@ -236,12 +286,30 @@ fun VideoPlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Tap & Double Tap Gesture Overlay (No volume/brightness gestures)
+        // Tap & Double Tap & Long Press Gesture Overlay
+        // - Tap: toggle controlli
+        // - Double tap sx/dx: skip
+        // - Double tap centro: play/pause
+        // - Long press metà destra: BOOST velocità
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(skipIntervalSeconds) {
+                .pointerInput(skipIntervalSeconds, boostSpeed, isBoostEnabled) {
                     detectTapGestures(
+                        onPress = {
+                            tryAwaitRelease()
+                            // Al rilascio del dito, disattiva il boost se attivo
+                            if (isBoosting) {
+                                isBoosting = false
+                                exoPlayer.playbackParameters = PlaybackParameters(playbackSpeed)
+                            }
+                        },
+                        onLongPress = { offset ->
+                            if (isBoostEnabled && offset.x > size.width * 0.5f) {
+                                isBoosting = true
+                                exoPlayer.playbackParameters = PlaybackParameters(boostSpeed)
+                            }
+                        },
                         onTap = {
                             if (showSettingsPanel) {
                                 showSettingsPanel = false
@@ -257,12 +325,14 @@ fun VideoPlayerScreen(
                                 currentPos = target
                                 skipFeedbackText = "-${skipIntervalSeconds}s"
                                 skipFeedbackIsForward = false
+                                skipFeedbackSeq++
                             } else if (offset.x > size.width * 0.60f) {
                                 val target = (exoPlayer.currentPosition + skipMs).coerceAtMost(totalDuration)
                                 exoPlayer.seekTo(target)
                                 currentPos = target
                                 skipFeedbackText = "+${skipIntervalSeconds}s"
                                 skipFeedbackIsForward = true
+                                skipFeedbackSeq++
                             } else {
                                 if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                                 isPlaying = exoPlayer.isPlaying
@@ -299,6 +369,43 @@ fun VideoPlayerScreen(
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+
+        // BOOST VISUAL FEEDBACK (visibile durante long-press)
+        AnimatedVisibility(
+            visible = isBoosting,
+            enter = fadeIn(tween(120)) + scaleIn(initialScale = 0.85f),
+            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 80.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFFFF2A42).copy(alpha = 0.95f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
+                shadowElevation = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.FastForward,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = String.format("%.1fx BOOST", boostSpeed),
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
@@ -599,26 +706,45 @@ fun VideoPlayerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Sigla Ita skip (3m 20s = 200s)
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color.White.copy(alpha = 0.10f),
-                                    border = BorderStroke(1.dp, specularBorder),
-                                    modifier = Modifier.iosSpringPress {
-                                        val target = (exoPlayer.currentPosition + 200_000L).coerceAtMost(totalDuration)
-                                        exoPlayer.seekTo(target)
-                                        currentPos = target
-                                        skipFeedbackText = "Sigla Saltata (+3m 20s)"
-                                        skipFeedbackIsForward = true
+                                // Sigla Mediaset (timestamp intelligente da MediasetTimestampProvider)
+                                val hasOpening = currentOpeningEnd > 0L
+                                val isBeforeOpeningEnd = currentPos < currentOpeningEnd
+                                if (hasOpening && isBeforeOpeningEnd) {
+                                    val skipLabel = if (currentOpeningEnd < 120_000L) {
+                                        "Sigla (${currentOpeningEnd / 1000}s)"
+                                    } else {
+                                        "Sigla (${currentOpeningEnd / 60000}m ${(currentOpeningEnd % 60000) / 1000}s)"
                                     }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = Color.White.copy(alpha = 0.10f),
+                                        border = BorderStroke(1.dp, specularBorder),
+                                        modifier = Modifier.iosSpringPress {
+                                            exoPlayer.seekTo(currentOpeningEnd)
+                                            currentPos = currentOpeningEnd
+                                            skipFeedbackText = "Sigla Saltata"
+                                            skipFeedbackIsForward = true
+                                            skipFeedbackSeq++
+                                        }
                                     ) {
-                                        Icon(Icons.Default.FastForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Sigla (3m 20s)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Default.FastForward,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = skipLabel,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
                                     }
                                 }
 
@@ -818,6 +944,176 @@ fun VideoPlayerScreen(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // === BOOST VELOCITÀ (long-press metà destra) ===
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Boost Long-Press (metà dx)",
+                            color = Color.LightGray,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = accentRed.copy(alpha = 0.20f),
+                            border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f))
+                        ) {
+                            Text(
+                                text = String.format("%.1fx", boostSpeed),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Slider(
+                        value = boostSpeed,
+                        onValueChange = { sp ->
+                            boostSpeed = (kotlin.math.round(sp * 10) / 10f).coerceIn(1.25f, 4.0f)
+                        },
+                        onValueChangeFinished = {
+                            prefs.setBoostSpeed(boostSpeed)
+                        },
+                        valueRange = 1.25f..4.0f,
+                        steps = 10,
+                        colors = SliderDefaults.colors(
+                            thumbColor = accentRed,
+                            activeTrackColor = accentRed,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(1.5f, 2.0f, 2.5f, 3.0f, 4.0f).forEach { sp ->
+                            val isSel = kotlin.math.abs(boostSpeed - sp) < 0.05f
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSel) accentRed else Color.White.copy(alpha = 0.08f),
+                                border = BorderStroke(1.dp, if (isSel) accentRed else Color.White.copy(alpha = 0.15f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .iosSpringPress {
+                                        boostSpeed = sp
+                                        prefs.setBoostSpeed(sp)
+                                    }
+                            ) {
+                                Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "${sp}x",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // === TIMESTAMP MEDIASET & AUTO-LEARNING ===
+                    Text(
+                        "Timestamp Sigla Mediaset",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Attuale fine sigla: ${formatTime(currentOpeningEnd)}",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = accentRed.copy(alpha = 0.20f),
+                            border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f)),
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .iosSpringPress {
+                                    val now = exoPlayer.currentPosition
+                                    prefs.saveCustomTimestamp(episodeNumber, "opening_end", now)
+                                    currentOpeningEnd = now
+                                    Toast.makeText(
+                                        context,
+                                        "📌 Salvato: fine sigla a ${formatTime(now)} per Ep. $episodeNumber!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "📌 Segna qui fine sigla",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .iosSpringPress {
+                                    prefs.saveCustomTimestamp(episodeNumber, "opening_end", -1L)
+                                    val defaultTs = MediasetTimestampProvider.getForEpisode(context, episodeNumber)
+                                    currentOpeningEnd = defaultTs.openingEndMs
+                                    Toast.makeText(
+                                        context,
+                                        "Timestamp ripristinato ai valori Mediaset",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Ripristina",
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }

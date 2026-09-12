@@ -6,11 +6,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -375,23 +379,109 @@ class MainActivity : ComponentActivity() {
     private var isInPipModeState = mutableStateOf(false)
     private var isPlayerActive = false
 
-    fun enterPipMode() {
-        if (isPlayerActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-                .apply {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        setAutoEnterEnabled(true)
-                    }
-                }
-                .build()
-            enterPictureInPictureMode(params)
+    // Callback che il VideoPlayerScreen riempie quando è attivo
+    var pipPlayPauseCallback: (() -> Unit)? = null
+    var pipForwardCallback: (() -> Unit)? = null
+    var pipRewindCallback: (() -> Unit)? = null
+
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            when (intent.action) {
+                ACTION_PIP_PLAY_PAUSE -> pipPlayPauseCallback?.invoke()
+                ACTION_PIP_FORWARD    -> pipForwardCallback?.invoke()
+                ACTION_PIP_REWIND     -> pipRewindCallback?.invoke()
+            }
         }
+    }
+
+    private var pipReceiverRegistered = false
+
+    override fun onStart() {
+        super.onStart()
+        if (!pipReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(ACTION_PIP_PLAY_PAUSE)
+                addAction(ACTION_PIP_FORWARD)
+                addAction(ACTION_PIP_REWIND)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(pipActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(pipActionReceiver, filter)
+            }
+            pipReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (pipReceiverRegistered) {
+            try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
+            pipReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    fun enterPipMode(isPlaying: Boolean = true) {
+        if (!isPlayerActive || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        fun makePending(action: String, code: Int): PendingIntent =
+            PendingIntent.getBroadcast(
+                this, code,
+                Intent(action).setPackage(packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+        val actions = mutableListOf(
+            RemoteAction(
+                Icon.createWithResource(
+                    this,
+                    if (isPlaying) android.R.drawable.ic_media_pause
+                    else android.R.drawable.ic_media_play
+                ),
+                if (isPlaying) "Pausa" else "Play",
+                if (isPlaying) "Metti in pausa" else "Riprendi",
+                makePending(ACTION_PIP_PLAY_PAUSE, 9101)
+            ),
+            RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_rew),
+                "-10s", "Torna indietro di 10 secondi",
+                makePending(ACTION_PIP_REWIND, 9102)
+            ),
+            RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_ff),
+                "+10s", "Salta avanti di 10 secondi",
+                makePending(ACTION_PIP_FORWARD, 9103)
+            )
+        )
+
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setActions(actions)
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setAutoEnterEnabled(true)
+                }
+            }
+            .build()
+
+        try {
+            setPictureInPictureParams(params)
+            enterPictureInPictureMode(params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    companion object {
+        const val ACTION_PIP_PLAY_PAUSE = "com.opplayer.PIP_PLAY_PAUSE"
+        const val ACTION_PIP_FORWARD    = "com.opplayer.PIP_FORWARD_10"
+        const val ACTION_PIP_REWIND     = "com.opplayer.PIP_REWIND_10"
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        enterPipMode()
+        enterPipMode(isPlaying = true)
     }
 
     override fun onPictureInPictureModeChanged(
@@ -515,7 +605,8 @@ class MainActivity : ComponentActivity() {
                 val savedEpisode = remember { prefs.getLastEpisode() }
                 val defaultStartUrl = OnePieceHelper.buildEpisodeUrl("", savedEpisode)
                 val savedUrl = remember { prefs.getLastUrl() ?: defaultStartUrl }
-                val savedPosition = remember { prefs.getLastPositionMs() }
+                // Reattivo: si aggiorna in tempo reale quando il player salva
+                var savedPosition by remember { mutableLongStateOf(prefs.getLastPositionMs()) }
 
                 var currentEpisodeNumber by remember { mutableIntStateOf(savedEpisode) }
                 var currentWebUrl by remember { mutableStateOf(savedUrl) }
@@ -3222,58 +3313,92 @@ class MainActivity : ComponentActivity() {
                                 initialPositionMs = startFromPosition,
                                 isInPipMode = isInPipModeState.value,
                                 isAdvancingNext = isPlayerAdvancingNext,
-                                onEnterPip = { enterPipMode() },
+                                onEnterPip = { enterPipMode(isPlaying = true) },
                                 onDownloadRequested = { url, ep ->
                                     downloadEpisodeOffline(url, ep)
                                 },
                                 onNextEpisode = {
                                     val nextEp = currentEpisodeNumber + 1
-                                    if (nextEp <= OnePieceHelper.TOTAL_AIRING_EPISODES) {
-                                        val nextUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, nextEp)
-                                        currentEpisodeNumber = nextEp
-                                        currentWebUrl = nextUrl
-                                        startFromPosition = 0L
-                                        isPlayerAdvancingNext = true
-                                        isAutoAdvancing = true
+                                    if (nextEp > OnePieceHelper.TOTAL_AIRING_EPISODES) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Sei arrivato all'ultimo episodio trasmesso!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@VideoPlayerScreen
+                                    }
 
-                                        // 1. Controlla prima se è in locale
-                                        val localNext = downloadedList.firstOrNull { it.episodeNumber == nextEp }
-                                        if (localNext != null && localNext.file.exists()) {
-                                            activeVideoUrl = localNext.file.absolutePath
+                                    val nextUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, nextEp)
+                                    currentEpisodeNumber = nextEp
+                                    currentWebUrl = nextUrl
+                                    startFromPosition = 0L
+                                    isPlayerAdvancingNext = true
+                                    isAutoAdvancing = true
+
+                                    // 1. Controllo file locale
+                                    val localNext = downloadedList.firstOrNull { it.episodeNumber == nextEp }
+                                    if (localNext != null && localNext.file.exists()) {
+                                        activeVideoUrl = localNext.file.absolutePath
+                                        isPlayerAdvancingNext = false
+                                        isAutoAdvancing = false
+                                        prefs.saveLastPlayback(localNext.file.absolutePath, nextEp, 0L)
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Riproduzione locale Ep. $nextEp 💾",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@VideoPlayerScreen
+                                    }
+
+                                    // 2. Naviga WebView + estrazione diretta in parallelo
+                                    webViewInstance?.loadUrl(nextUrl)
+
+                                    // WATCHDOG: se dopo 15s lo stato è ancora "advancing",
+                                    // sblocca tutto e mostra errore — fix del bug
+                                    // "next episode bloccato a schermo".
+                                    lifecycleScope.launch {
+                                        delay(15_000L)
+                                        if (isPlayerAdvancingNext) {
                                             isPlayerAdvancingNext = false
-                                            prefs.saveLastPlayback(localNext.file.absolutePath, nextEp, 0L)
-                                            Toast.makeText(this@MainActivity, "Riproduzione locale Ep. $nextEp 💾", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            // 2. Naviga WebView e in parallelo estrai direttamente
-                                            webViewInstance?.loadUrl(nextUrl)
+                                            isAutoAdvancing = false
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Ep. $nextEp non caricabile automaticamente. Riprova o aprilo dal Registro.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
 
-                                            lifecycleScope.launch(Dispatchers.IO) {
-                                                try {
-                                                    val direct = StreamExtractor.resolveStreamUrl(nextUrl)
-                                                    if (!direct.isNullOrBlank()) {
-                                                        withContext(Dispatchers.Main) {
-                                                            activeVideoUrl = direct
-                                                            detectedVideoUrl = direct
-                                                            isPlayerAdvancingNext = false
-                                                            isAutoAdvancing = false
-                                                            prefs.saveLastPlayback(nextUrl, nextEp, 0L)
-                                                        }
-                                                        return@launch
-                                                    }
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        try {
+                                            val direct = StreamExtractor.resolveStreamUrl(nextUrl)
+                                            if (!direct.isNullOrBlank()) {
+                                                withContext(Dispatchers.Main) {
+                                                    activeVideoUrl = direct
+                                                    detectedVideoUrl = direct
+                                                    isPlayerAdvancingNext = false
+                                                    isAutoAdvancing = false
+                                                    prefs.saveLastPlayback(nextUrl, nextEp, 0L)
                                                 }
                                             }
+                                            // Se null, lascia gestire al WebView / watchdog
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
                                         }
-                                    } else {
-                                        Toast.makeText(this@MainActivity, "Sei arrivato all'ultimo episodio trasmesso!", Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 onPositionChanged = { pos ->
                                     val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
                                     prefs.saveLastPlayback(currentWebUrl, ep, pos)
+                                    // Aggiorna la Home in tempo reale (fix bug "esci dal player,
+                                    // la posizione non si vede finché non riapri l'app")
+                                    savedPosition = pos
                                 },
                                 onClose = {
+                                    // Sincronizza lo stato della Home con l'ultimo salvataggio
+                                    savedPosition = prefs.getLastPositionMs()
+                                    currentEpisodeNumber = prefs.getLastEpisode()
+                                    watchedEpisodes = prefs.getWatchedEpisodes()
                                     activeVideoUrl = null
                                     isPlayerAdvancingNext = false
                                 }
