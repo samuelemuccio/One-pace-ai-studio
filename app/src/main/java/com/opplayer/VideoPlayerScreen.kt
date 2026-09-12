@@ -1,7 +1,9 @@
 package com.opplayer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.lifecycle.compose.LocalLifecycleOwner
+// AGGIUNGI/MANTIENI:
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import java.util.Locale
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
