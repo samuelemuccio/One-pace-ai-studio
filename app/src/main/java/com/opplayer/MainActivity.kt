@@ -2603,28 +2603,21 @@ class MainActivity : ComponentActivity() {
                         }
 
                         SettingsDialog(
-                            isOpen = showSettingsDialog,
-                            onDismiss = { showSettingsDialog = false },
-                            prefs = prefs,
-                            cloudSyncManager = cloudSyncManager,
-                            currentEpisode = currentEpisodeNumber,
-                            dailyStreak = dailyStreak,
-                            watchedCount = watchedEpisodes.size,
-                            onRestoreJsonRequested = {
-                                showImportDialog = true
-                            },
-                            onMarkAllWatchedUpToCurrent = {
-                                for (ep in 1..currentEpisodeNumber) {
-                                    prefs.markEpisodeWatched(ep, true)
-                                }
-                                watchedEpisodes = prefs.getWatchedEpisodes()
-                                Toast.makeText(this@MainActivity, "Segnati come visti fino all'episodio $currentEpisodeNumber! ✅", Toast.LENGTH_SHORT).show()
-                            },
-                            onSyncSuccess = { email ->
-                                cloudUserEmail = email
-                                cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
-                            }
-                        )
+    isOpen = showSettingsDialog,
+    onDismiss = { showSettingsDialog = false },
+    prefs = prefs,
+    cloudSyncManager = cloudSyncManager,
+    currentEpisode = currentEpisodeNumber,
+    dailyStreak = dailyStreak,
+    watchedCount = watchedEpisodes.size,
+    onRestoreJsonRequested = {
+        showImportDialog = true
+    },
+    onSyncSuccess = { email ->
+        cloudUserEmail = email
+        cloudLastSyncText = cloudSyncManager.getLastSyncDateFormatted()
+    }
+)
 
                         // ========== FIX PATCH 5.1: WebView resume + gestione posizione ==========
                         activeVideoUrl?.let { videoUrl ->
