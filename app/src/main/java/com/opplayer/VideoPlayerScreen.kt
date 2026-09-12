@@ -1,9 +1,5 @@
 package com.opplayer
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-// AGGIUNGI/MANTIENI:
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import java.util.Locale
+
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
@@ -18,8 +14,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -33,13 +31,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
@@ -50,6 +48,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @Composable
 fun Modifier.iosSpringPress(onClick: (() -> Unit)? = null): Modifier = composed {
@@ -64,7 +63,10 @@ fun Modifier.iosSpringPress(onClick: (() -> Unit)? = null): Modifier = composed 
         label = "springScale"
     )
     this
-        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
         .then(
             if (onClick != null) {
                 Modifier.clickable(
@@ -133,7 +135,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    // ExoPlayer con headers anti-403
     val exoPlayer = remember {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(
@@ -169,7 +170,6 @@ fun VideoPlayerScreen(
         exoPlayer.playWhenReady = true
     }
 
-    // Loop aggiornamento posizione
     LaunchedEffect(Unit) {
         var tick = 0
         while (true) {
@@ -180,12 +180,10 @@ fun VideoPlayerScreen(
                 totalDuration = if (dur > 0) dur else 0L
                 onPositionChanged(currentPos)
 
-                // Salva posizione ogni ~2s (ogni 4 tick da 500ms)
                 if (tick % 4 == 0) {
                     prefs.savePositionForEpisode(episodeNumber, currentPos)
                 }
 
-                // Auto-marca come visto a 22:30
                 if (!hasMarkedWatched && currentPos >= OnePieceHelper.WATCHED_THRESHOLD_MS) {
                     hasMarkedWatched = true
                     prefs.markEpisodeWatched(episodeNumber, true)
@@ -197,7 +195,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Salva posizione quando l'app va in background
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
@@ -224,7 +221,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Auto-hide controlli
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
             delay(4500)
@@ -232,8 +228,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Fix: il badge "+Xs/-Xs" rimaneva impresso.
-    // Uso un id incrementale: ogni nuovo tap cancella il precedente timer.
     LaunchedEffect(skipFeedbackId) {
         if (skipFeedbackText != null) {
             delay(750)
@@ -285,7 +279,6 @@ fun VideoPlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Gesture overlay: tap, double-tap, long-press boost
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -318,7 +311,6 @@ fun VideoPlayerScreen(
                             }
                         },
                         onPress = { offset ->
-                            // Long-press lato destro → boost
                             if (offset.x > size.width * 0.60f) {
                                 val prevSpeed = exoPlayer.playbackParameters.speed
                                 try {
@@ -336,7 +328,6 @@ fun VideoPlayerScreen(
                 }
         )
 
-        // Badge boost
         AnimatedVisibility(
             visible = isBoosting,
             enter = fadeIn() + scaleIn(),
@@ -368,7 +359,6 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Feedback skip (fix: ora usa id, non si blocca)
         skipFeedbackText?.let { text ->
             Surface(
                 modifier = Modifier
@@ -396,7 +386,6 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Overlay caricamento prossimo episodio
         if (isAdvancingNext) {
             Box(
                 modifier = Modifier
@@ -427,7 +416,6 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Controlli
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(spring(stiffness = Spring.StiffnessMediumLow)),
@@ -436,7 +424,6 @@ fun VideoPlayerScreen(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
 
-                // Top bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -550,7 +537,6 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Bottom bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -645,7 +631,6 @@ fun VideoPlayerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Skip opening (dinamico per fascia episodio)
                                 val introSec = (timings.introEndMs / 1000).toInt()
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
@@ -676,7 +661,6 @@ fun VideoPlayerScreen(
                                     }
                                 }
 
-                                // Skip recap
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
                                     color = accentRed.copy(alpha = 0.18f),
@@ -725,7 +709,6 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Pannello impostazioni player
         AnimatedVisibility(
             visible = showSettingsPanel,
             enter = slideInHorizontally(
@@ -769,7 +752,6 @@ fun VideoPlayerScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Velocità riproduzione
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -841,7 +823,6 @@ fun VideoPlayerScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Boost multiplier (long-press destro)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -937,5 +918,3 @@ fun VideoPlayerScreen(
         }
     }
 }
-
-// Import mancante per verticalScroll
