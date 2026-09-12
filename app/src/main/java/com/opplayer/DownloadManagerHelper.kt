@@ -19,8 +19,6 @@ data class ActiveDownloadProgress(
     val progressPercent: Int,
     val downloadedMb: String,
     val totalMb: String,
-    val remainingMb: String = "",
-    val remainingPercent: Int = 100 - progressPercent,
     val bytesDownloadedMb: String = downloadedMb,
     val totalBytesMb: String = totalMb
 )
@@ -65,6 +63,9 @@ class DownloadManagerHelper(private val context: Context) {
         editor.apply()
     }
 
+    // NB: la qualità è solo cosmetica nel titolo della notifica. Il file è
+    // sempre l'MP4 sorgente estratto da StreamExtractor. Per una vera
+    // differenziazione 720p/1080p servirebbe risolvere la master playlist HLS.
     suspend fun startDownloadForEpisode(
         epNumber: Int,
         quality: String = "720p",
@@ -78,15 +79,11 @@ class DownloadManagerHelper(private val context: Context) {
                 return@withContext Result.failure(Exception("Episodio $epNumber già scaricato! 💾"))
             }
 
-            val resolvedUrl = directUrl ?: StreamExtractor.resolveStreamUrl(
-                OnePieceHelper.buildEpisodeUrl("", epNumber),
-                preferredQuality = quality
-            )
+            val resolvedUrl = directUrl ?: StreamExtractor.resolveStreamUrl(OnePieceHelper.buildEpisodeUrl("", epNumber))
             if (resolvedUrl.isNullOrBlank()) {
                 return@withContext Result.failure(Exception("Impossibile estrarre stream per Ep. $epNumber"))
             }
 
-            // Cancella eventuale file residuo incompleto
             if (targetFile.exists()) {
                 targetFile.delete()
             }
@@ -117,36 +114,26 @@ class DownloadManagerHelper(private val context: Context) {
         var removed = false
         val activeMap = getActiveMap()
 
-        // 1. Ferma e cancella il task dal DownloadManager di Android
         if (downloadId != null) {
-            try { dm.remove(downloadId) } catch (e: Exception) { e.printStackTrace() }
+            dm.remove(downloadId)
             activeMap.remove(downloadId)
             removed = true
-        }
-
-        // Cerca tutti i downloadId associati all'episodio
-        val idsToRemove = activeMap.filterValues { it == epNumber }.keys.toList()
-        for (id in idsToRemove) {
-            try { dm.remove(id) } catch (e: Exception) { e.printStackTrace() }
-            activeMap.remove(id)
-            removed = true
+        } else {
+            val idsToRemove = activeMap.filterValues { it == epNumber }.keys
+            for (id in idsToRemove) {
+                dm.remove(id)
+                activeMap.remove(id)
+                removed = true
+            }
         }
         saveActiveMap(activeMap)
 
-        // 2. Cancella il file parziale o completo dal disco
         val dir = getMoviesDir()
         if (dir != null) {
-            val targetFile = File(dir, "OnePiece_Ep_$epNumber.mp4")
-            if (targetFile.exists()) {
-                targetFile.delete()
+            val file = File(dir, "OnePiece_Ep_$epNumber.mp4")
+            if (file.exists()) {
+                file.delete()
                 removed = true
-            }
-            // Elimina anche eventuali file temporanei o parziali
-            dir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("OnePiece_Ep_${epNumber}.") || f.name.contains("Ep_$epNumber")) {
-                    f.delete()
-                    removed = true
-                }
             }
         }
         return removed
@@ -162,9 +149,6 @@ class DownloadManagerHelper(private val context: Context) {
 
         val query = DownloadManager.Query().setFilterById(*ids)
         var cursor: Cursor? = null
-        val foundIdsInCursor = mutableSetOf<Long>()
-        val idsToPurge = mutableListOf<Long>()
-
         try {
             cursor = dm.query(query)
             val idCol = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
@@ -172,9 +156,10 @@ class DownloadManagerHelper(private val context: Context) {
             val totalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
             val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
 
+            val completedOrRemovedIds = mutableListOf<Long>()
+
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
-                foundIdsInCursor.add(id)
                 val ep = activeMap[id] ?: continue
                 val bytesSoFar = if (bytesCol >= 0) cursor.getLong(bytesCol) else 0L
                 val totalBytes = if (totalCol >= 0) cursor.getLong(totalCol) else 0L
@@ -189,18 +174,13 @@ class DownloadManagerHelper(private val context: Context) {
                     DownloadManager.STATUS_PAUSED -> "In pausa"
                     DownloadManager.STATUS_RUNNING -> "Download in corso ($percent%)"
                     DownloadManager.STATUS_SUCCESSFUL -> "Completato"
-                    DownloadManager.STATUS_FAILED -> "Errore / Annullato"
+                    DownloadManager.STATUS_FAILED -> "Errore"
                     else -> "In scaricamento..."
                 }
 
-                if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
-                    idsToPurge.add(id)
+                if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                    completedOrRemovedIds.add(id)
                 } else {
-                    val remainingBytes = (totalBytes - bytesSoFar).coerceAtLeast(0L)
-                    val remainingMbStr = if (totalBytes > 0) {
-                        String.format("%.1f MB rimanenti", remainingBytes / (1024f * 1024f))
-                    } else "Calcolo..."
-
                     list.add(
                         ActiveDownloadProgress(
                             downloadId = id,
@@ -211,20 +191,14 @@ class DownloadManagerHelper(private val context: Context) {
                             statusText = statusText,
                             progressPercent = percent,
                             downloadedMb = String.format("%.1f MB", bytesSoFar / (1024f * 1024f)),
-                            totalMb = if (totalBytes > 0) String.format("%.1f MB", totalBytes / (1024f * 1024f)) else "Calcolo...",
-                            remainingMb = remainingMbStr,
-                            remainingPercent = (100 - percent).coerceIn(0, 100)
+                            totalMb = if (totalBytes > 0) String.format("%.1f MB", totalBytes / (1024f * 1024f)) else "Calcolo..."
                         )
                     )
                 }
             }
 
-            // Qualsiasi ID salvato nelle preferenze che DownloadManager non riconosce più (perché cancellato) va rimosso
-            val missingIds = activeMap.keys.filter { !foundIdsInCursor.contains(it) }
-            idsToPurge.addAll(missingIds)
-
-            if (idsToPurge.isNotEmpty()) {
-                for (cid in idsToPurge) {
+            if (completedOrRemovedIds.isNotEmpty()) {
+                for (cid in completedOrRemovedIds) {
                     activeMap.remove(cid)
                 }
                 saveActiveMap(activeMap)
