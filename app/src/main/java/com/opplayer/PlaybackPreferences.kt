@@ -26,31 +26,20 @@ class PlaybackPreferences(private val context: Context) {
         createNotificationChannel()
     }
 
-    /**
-     * Salva la posizione dell'ultimo playback.
-     * NB: NON registra la streak qui (era un bug che scriveva ogni 400ms).
-     */
     fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long) {
         prefs.edit()
             .putString("last_url", url)
             .putInt("last_episode", episodeNumber)
             .putLong("last_position_ms", positionMs)
+            .putLong("ep_pos_$episodeNumber", positionMs)
             .apply()
-        savePositionForEpisode(episodeNumber, positionMs)
+        recordWatchForStreak()
     }
 
     fun getLastUrl(): String? = prefs.getString("last_url", null)
-    fun getLastEpisode(): Int = prefs.getInt("last_episode", 351)
+    fun getLastEpisode(): Int = prefs.getInt("last_episode", 413)
     fun getLastPositionMs(): Long = prefs.getLong("last_position_ms", 0L)
-
-    /** Posizione per singolo episodio (indipendente dall'episodio corrente). */
-    fun savePositionForEpisode(ep: Int, posMs: Long) {
-        prefs.edit().putLong("pos_ep_$ep", posMs).apply()
-    }
-    fun getPositionForEpisode(ep: Int): Long = prefs.getLong("pos_ep_$ep", 0L)
-    fun clearPositionForEpisode(ep: Int) {
-        prefs.edit().remove("pos_ep_$ep").apply()
-    }
+    fun getEpisodePositionMs(episodeNumber: Int): Long = prefs.getLong("ep_pos_$episodeNumber", 0L)
 
     fun saveSpeed(speed: Float) {
         prefs.edit().putFloat("playback_speed", speed).apply()
@@ -62,17 +51,10 @@ class PlaybackPreferences(private val context: Context) {
     }
     fun getSkipStep(): Int = prefs.getInt("skip_step", 5)
 
-    /** Boost velocità per long-press (default 2.0x). */
-    fun saveBoostMultiplier(mult: Float) {
-        prefs.edit().putFloat("boost_multiplier", mult.coerceIn(1.25f, 4.0f)).apply()
-    }
-    fun getBoostMultiplier(): Float = prefs.getFloat("boost_multiplier", 2.0f)
-
     fun markEpisodeWatched(episode: Int, watched: Boolean = true) {
         val current = getWatchedEpisodes().toMutableSet()
         if (watched) {
             current.add(episode)
-            // La streak va registrata SOLO quando si marca esplicitamente
             recordWatchForStreak()
         } else {
             current.remove(episode)
@@ -80,20 +62,26 @@ class PlaybackPreferences(private val context: Context) {
         prefs.edit().putStringSet("watched_set", current.map { it.toString() }.toSet()).apply()
     }
 
-    fun isEpisodeWatched(episode: Int): Boolean = getWatchedEpisodes().contains(episode)
+    fun isEpisodeWatched(episode: Int): Boolean {
+        return getWatchedEpisodes().contains(episode)
+    }
 
     fun toggleFavorite(episode: Int): Boolean {
         val favs = getFavoriteEpisodes().toMutableSet()
         val newState = if (favs.contains(episode)) {
-            favs.remove(episode); false
+            favs.remove(episode)
+            false
         } else {
-            favs.add(episode); true
+            favs.add(episode)
+            true
         }
         prefs.edit().putStringSet("favorite_set", favs.map { it.toString() }.toSet()).apply()
         return newState
     }
 
-    fun isFavorite(episode: Int): Boolean = getFavoriteEpisodes().contains(episode)
+    fun isFavorite(episode: Int): Boolean {
+        return getFavoriteEpisodes().contains(episode)
+    }
 
     fun getFavoriteEpisodes(): Set<Int> {
         val raw = prefs.getStringSet("favorite_set", null) ?: return emptySet()
@@ -103,7 +91,7 @@ class PlaybackPreferences(private val context: Context) {
     fun getWatchedEpisodes(): Set<Int> {
         val raw = prefs.getStringSet("watched_set", null)
         return if (raw == null) {
-            val initSet = (1..351).toSet()
+            val initSet = (1..413).toSet()
             prefs.edit().putStringSet("watched_set", initSet.map { it.toString() }.toSet()).apply()
             initSet
         } else {
@@ -111,7 +99,10 @@ class PlaybackPreferences(private val context: Context) {
         }
     }
 
+    // --- GAMIFICATION: STREAK & NOTIFICATIONS ---
+
     fun getStreak(): Int = prefs.getInt("daily_streak", 3)
+
     fun getLastWatchDate(): String = prefs.getString("last_watch_date", "") ?: ""
 
     fun recordWatchForStreak(): Int {
@@ -120,13 +111,20 @@ class PlaybackPreferences(private val context: Context) {
         val lastDateStr = getLastWatchDate()
 
         var currentStreak = getStreak()
-        if (lastDateStr == todayStr) return currentStreak
+        if (lastDateStr == todayStr) {
+            // Already recorded today, streak maintained
+            return currentStreak
+        }
 
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -1)
         val yesterdayStr = sdf.format(cal.time)
 
-        currentStreak = if (lastDateStr == yesterdayStr) currentStreak + 1 else 1
+        currentStreak = if (lastDateStr == yesterdayStr) {
+            currentStreak + 1
+        } else {
+            1
+        }
 
         prefs.edit()
             .putInt("daily_streak", currentStreak)
@@ -152,8 +150,7 @@ class PlaybackPreferences(private val context: Context) {
             val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
             }
-            val notificationManager =
-                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -163,9 +160,7 @@ class PlaybackPreferences(private val context: Context) {
         prefs.edit().putBoolean("streak_reminder_enabled", enabled).apply()
     }
 
-    fun getPreferredDownloadQuality(): String =
-        prefs.getString("download_quality", "720p") ?: "720p"
-
+    fun getPreferredDownloadQuality(): String = prefs.getString("download_quality", "720p") ?: "720p"
     fun setPreferredDownloadQuality(quality: String) {
         prefs.edit().putString("download_quality", quality).apply()
     }
@@ -185,6 +180,7 @@ class PlaybackPreferences(private val context: Context) {
                 context, 0, intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
+
             val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle("⚠️ La tua serie pirata sta per scadere!")
@@ -192,9 +188,11 @@ class PlaybackPreferences(private val context: Context) {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID + 1, builder.build())
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     fun sendTestNotification(streakDays: Int, currentEp: Int) {
@@ -206,6 +204,7 @@ class PlaybackPreferences(private val context: Context) {
                 context, 0, intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
+
             val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle("🔥 Promemoria Serie Pirata (Attivo!)")
@@ -213,9 +212,11 @@ class PlaybackPreferences(private val context: Context) {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID + 2, builder.build())
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     fun notifyStreakMilestone(streakDays: Int) {
@@ -227,6 +228,7 @@ class PlaybackPreferences(private val context: Context) {
                 context, 0, intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
+
             val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle("Serie Pirata Attiva! 🔥")
@@ -234,8 +236,11 @@ class PlaybackPreferences(private val context: Context) {
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, builder.build())
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // Permission or notification disabled gracefully ignored
+        }
     }
 }

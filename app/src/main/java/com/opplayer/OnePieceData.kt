@@ -10,10 +10,10 @@ import java.util.Date
 import java.util.Locale
 
 enum class EpisodeType(val label: String, val hexColor: Long) {
-    MANGA_CANON("Canon", 0xFF30D15B),
-    ANIME_CANON("Anime Canon", 0xFF32ADE6),
-    MIXED("Mixed", 0xFFFF9F0A),
-    FILLER("Filler", 0xFF8E8E93)
+    MANGA_CANON("Canon", 0xFF30D15B),       // Emerald Green Canon (#30D15B)
+    ANIME_CANON("Anime Canon", 0xFF32ADE6), // Cyan Anime Canon
+    MIXED("Mixed", 0xFFFF9F0A),             // Mixed Orange (#FF9F0A)
+    FILLER("Filler", 0xFF8E8E93)            // Filler Grey (#8E8E93)
 }
 
 data class OnePieceSaga(
@@ -40,57 +40,9 @@ data class BackupData(
     val bountyBeli: Long
 )
 
-/**
- * Tempistiche reali delle sigle di One Piece (dati verificati).
- * - Ep 1-283:  OP ~1:50, ED ~1:10 (ending sempre presente)
- * - Ep 284-891: OP ~2:30, ED assente
- * - Ep 892-1070: OP ~2:00, ED assente
- * - Ep 1071-1073: OP ~1:30, ED ~1:30 (ritorno ending)
- * - Ep 1074+: OP ~1:30, ED ~1:30
- */
-data class EpisodeTimings(
-    val introEndMs: Long,      // fine opening
-    val recapEndMs: Long,      // fine recap iniziale
-    val outroStartMs: Long?    // inizio ending (null se assente)
-)
-
 object OnePieceHelper {
 
     const val TOTAL_AIRING_EPISODES = 1176
-
-    /** Soglia per considerare un episodio come "visto" (22:30 = 1.350.000 ms). */
-    const val WATCHED_THRESHOLD_MS = 1_350_000L
-
-    fun getTimingsForEpisode(ep: Int): EpisodeTimings {
-        return when {
-            ep in 1..283 -> EpisodeTimings(
-                introEndMs = 110_000L,     // 1:50
-                recapEndMs = 170_000L,     // ~2:50
-                outroStartMs = null
-            )
-            ep in 284..891 -> EpisodeTimings(
-                introEndMs = 150_000L,     // 2:30
-                recapEndMs = 210_000L,
-                outroStartMs = null
-            )
-            ep in 892..1070 -> EpisodeTimings(
-                introEndMs = 120_000L,     // 2:00
-                recapEndMs = 180_000L,
-                outroStartMs = null
-            )
-            ep in 1071..1073 -> EpisodeTimings(
-                introEndMs = 90_000L,
-                recapEndMs = 150_000L,
-                outroStartMs = 90_000L
-            )
-            ep >= 1074 -> EpisodeTimings(
-                introEndMs = 90_000L,
-                recapEndMs = 150_000L,
-                outroStartMs = 90_000L
-            )
-            else -> EpisodeTimings(110_000L, 170_000L, null)
-        }
-    }
 
     val SAGAS = listOf(
         OnePieceSaga("East Blue Saga", 1..61, "Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown", 0xFF34C759),

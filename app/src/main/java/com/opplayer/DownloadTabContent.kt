@@ -33,7 +33,8 @@ fun DownloadTabContent(
     prefs: PlaybackPreferences,
     currentEpisodeNumber: Int,
     watchedEpisodes: Set<Int>,
-    onPlayOfflineEpisode: (filePath: String, episodeNumber: Int) -> Unit
+    onPlayOfflineEpisode: (filePath: String, episodeNumber: Int) -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -43,6 +44,7 @@ fun DownloadTabContent(
     var selectedQuality by remember { mutableStateOf(prefs.getPreferredDownloadQuality()) }
     var isBatchDownloading by remember { mutableStateOf(false) }
 
+    // Polling periodico ogni 1s per aggiornare i progressi in tempo reale
     LaunchedEffect(Unit) {
         while (true) {
             activeDownloads = downloadManagerHelper.getActiveDownloads()
@@ -58,6 +60,8 @@ fun DownloadTabContent(
     val goldAccent = Color(0xFFFFD700)
     val successGreen = Color(0xFF34C759)
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -67,22 +71,52 @@ fun DownloadTabContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 18.dp),
-            contentPadding = PaddingValues(top = 18.dp, bottom = 32.dp)
+            contentPadding = PaddingValues(top = statusBarTop + 14.dp, bottom = 120.dp)
         ) {
+            // Header con titolo e pulsante Impostazioni
             item {
-                Text(
-                    text = "OFFLINE VAULT",
-                    color = accentRed,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp
-                )
-                Text(
-                    text = "Gestione Download",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(end = 12.dp)
+                    ) {
+                        Text(
+                            text = "OFFLINE VAULT",
+                            color = accentRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = "Gestione Download",
+                            color = Color.White,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.10f))
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Impostazioni",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "File multimediali memorizzati in locale per la visione senza internet",
                     color = Color.Gray,
@@ -91,6 +125,7 @@ fun DownloadTabContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // CARD CONTROLLO QUALITÀ & BATCH DOWNLOAD (SCARICA IN MASSA)
                 Surface(
                     shape = RoundedCornerShape(24.dp),
                     color = Color(0x99181826),
@@ -121,6 +156,7 @@ fun DownloadTabContent(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        // Selettore 720p vs 1080p
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -162,6 +198,7 @@ fun DownloadTabContent(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
+                        // Pulsante Download in Massa (Prossimi 3 episodi)
                         Button(
                             onClick = {
                                 if (isBatchDownloading) return@Button
@@ -192,7 +229,7 @@ fun DownloadTabContent(
                             Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isBatchDownloading) "Preparazione download..." else "📥 Scarica Prossimi 3 Episodi ($selectedQuality)",
+                                text = if (isBatchDownloading) "Preparazione download..." else "Scarica Prossimi 3 Episodi ($selectedQuality)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.White
@@ -204,6 +241,7 @@ fun DownloadTabContent(
                 Spacer(modifier = Modifier.height(22.dp))
             }
 
+            // SEZIONE 1: DOWNLOAD IN CORSO (TEMPO REALE)
             if (activeDownloads.isNotEmpty()) {
                 item {
                     Row(
@@ -257,18 +295,28 @@ fun DownloadTabContent(
                                         fontSize = 15.sp
                                     )
                                     Text(
-                                        text = "${download.statusText} • ${download.bytesDownloadedMb} di ${download.totalBytesMb}",
-                                        color = Color.Gray,
-                                        fontSize = 12.sp
+                                        text = download.statusText,
+                                        color = Color(0xFF32ADE6),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
 
-                                Text(
-                                    text = "${download.progressPercent}%",
-                                    color = accentRed,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "${download.progressPercent}%",
+                                        color = accentRed,
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    if (download.remainingMb.isNotEmpty()) {
+                                        Text(
+                                            text = download.remainingMb,
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
@@ -287,8 +335,15 @@ fun DownloadTabContent(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text(
+                                    text = "${download.bytesDownloadedMb} / ${download.totalBytesMb}",
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+
                                 OutlinedButton(
                                     onClick = {
                                         downloadManagerHelper.cancelOrDeleteDownload(download.episodeNumber, download.downloadId)
@@ -314,6 +369,7 @@ fun DownloadTabContent(
                 }
             }
 
+            // SEZIONE 2: EPISODI SCARICATI (PRONTI OFFLINE)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -411,10 +467,11 @@ fun DownloadTabContent(
                                 }
                             }
                             Spacer(modifier = Modifier.height(3.dp))
-                            Text(text = "${item.totalBytesMb} • Pronto alla visione", color = Color.Gray, fontSize = 12.sp)
+                            Text(text = "${item.totalBytesMb} MB • Pronto alla visione", color = Color.Gray, fontSize = 12.sp)
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // Pulsante Play
                             Surface(
                                 shape = CircleShape,
                                 color = accentRed,
@@ -431,6 +488,7 @@ fun DownloadTabContent(
                                 }
                             }
 
+                            // Pulsante Elimina
                             IconButton(
                                 onClick = {
                                     downloadManagerHelper.cancelOrDeleteDownload(item.episodeNumber, item.downloadId)
