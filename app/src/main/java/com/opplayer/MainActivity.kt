@@ -872,15 +872,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Scaffold(
-                    containerColor = AppColors.Background,
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
-                ) { _ ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(AppColors.Background)
-                    ) {
+                val appHazeState = remember { dev.chrisbanes.haze.HazeState() }
+
+                CompositionLocalProvider(LocalHazeState provides appHazeState) {
+                    Scaffold(
+                        containerColor = AppColors.Background,
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                    ) { _ ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(AppColors.Background)
+                        ) {
                         // Background WebView for scraping & video detection
                         AndroidView(
                             factory = { ctx ->
@@ -1019,7 +1022,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             label = "tabTransition",
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .liquidGlassSource(appHazeState)
                         ) { tab ->
                             when (tab) {
                                 0 -> {
@@ -1036,6 +1041,10 @@ class MainActivity : ComponentActivity() {
                                             currentEpisodeNumber = ep
                                             savedPosition = prefs.getEpisodePositionMs(ep)
                                             prefs.setLastEpisode(ep)
+                                        },
+                                        onToggleWatched = { ep ->
+                                            prefs.toggleWatched(ep)
+                                            watchedEpisodes = prefs.getWatchedEpisodes()
                                         },
                                         onOpenSearch = { showQuickJumpDialog = true },
                                         onOpenBrowser = { isBrowserOpen = true },
@@ -1312,13 +1321,18 @@ class MainActivity : ComponentActivity() {
                                         .padding(horizontal = 24.dp, vertical = 14.dp)
                                         .align(Alignment.BottomCenter)
                                 ) {
-                                    Surface(
-                                        shape = AppShape.Capsule,
-                                        color = AppColors.Surface2.copy(alpha = 0.94f),
-                                        border = BorderStroke(1.dp, AppColors.Separator),
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .iosShadow(radius = 20.dp, alpha = 0.5f)
+                                            .iosShadow(radius = 22.dp, alpha = 0.55f)
+                                            .liquidGlass(
+                                                hazeState = appHazeState,
+                                                shape = AppShape.Capsule,
+                                                tintColor = Color(0x35101018),
+                                                blurRadius = 32.dp,
+                                                borderAlpha = 0.40f,
+                                                enableAgslRefraction = true
+                                            )
                                     ) {
                                         data class NavItem(val tabIndex: Int, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
                                         val items = remember {
@@ -2419,4 +2433,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 }

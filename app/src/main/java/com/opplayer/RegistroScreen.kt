@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -638,6 +640,17 @@ fun SagaDetailDialog(
         }
     }
 
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val animatedOffsetY by animateFloatAsState(
+        targetValue = dragOffsetY,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "sheetDragOffset"
+    )
+    val hapticTick = rememberHapticTick()
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -646,9 +659,15 @@ fun SagaDetailDialog(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.88f)
-                .clip(RoundedCornerShape(24.dp)),
+                .graphicsLayer {
+                    translationY = animatedOffsetY
+                    val scaleFactor = (1f - (dragOffsetY / 1200f)).coerceIn(0.88f, 1f)
+                    scaleX = scaleFactor
+                    scaleY = scaleFactor
+                }
+                .clip(RoundedCornerShape(26.dp)),
             color = AppColors.Bg0,
-            border = BorderStroke(1.dp, AppColors.GlassBorder)
+            border = null
         ) {
             Column(
                 modifier = Modifier
@@ -656,28 +675,80 @@ fun SagaDetailDialog(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(saga.tagColor).copy(alpha = 0.15f),
+                                Color(0x22FFFFFF),
                                 AppColors.Bg0
                             )
                         )
                     )
             ) {
-                // Drag handle iOS style
+                // Drag handle iOS style con gesture di scorrimento verso il basso
                 Box(
                     modifier = Modifier
-                        .padding(top = 10.dp)
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(AppShape.Pill)
-                        .background(Color.White.copy(alpha = 0.30f))
-                        .align(Alignment.CenterHorizontally)
-                )
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragStart = {},
+                                onDragEnd = {
+                                    if (dragOffsetY > 140f) {
+                                        hapticTick()
+                                        onDismiss()
+                                    } else {
+                                        dragOffsetY = 0f
+                                    }
+                                },
+                                onDragCancel = {
+                                    dragOffsetY = 0f
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 0 || dragOffsetY > 0) {
+                                        change.consume()
+                                        dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                                    }
+                                }
+                            )
+                        }
+                        .padding(top = 12.dp, bottom = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(46.dp)
+                            .height(5.dp)
+                            .clip(AppShape.Pill)
+                            .background(
+                                if (dragOffsetY > 0) Color.White.copy(alpha = 0.75f)
+                                else Color.White.copy(alpha = 0.35f)
+                            )
+                    )
+                }
 
                 // Header Pop-up
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragStart = {},
+                                onDragEnd = {
+                                    if (dragOffsetY > 140f) {
+                                        hapticTick()
+                                        onDismiss()
+                                    } else {
+                                        dragOffsetY = 0f
+                                    }
+                                },
+                                onDragCancel = {
+                                    dragOffsetY = 0f
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 0 || dragOffsetY > 0) {
+                                        change.consume()
+                                        dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                                    }
+                                }
+                            )
+                        }
+                        .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

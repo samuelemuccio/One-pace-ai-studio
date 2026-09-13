@@ -8,8 +8,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,11 +34,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -50,6 +57,7 @@ fun HomeScreen(
     savedPosition: Long,
     onPlay: (Int, Long) -> Unit,
     onEpisodeSelected: (Int) -> Unit = {},
+    onToggleWatched: (Int) -> Unit = {},
     onOpenSearch: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenStreak: () -> Unit,
@@ -127,7 +135,14 @@ fun HomeScreen(
                             style = AppType.Title.copy(color = AppColors.TextPrimary)
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MinimalStreakBadge(
+                            streak = dailyStreak,
+                            onClick = onOpenStreak
+                        )
                         GlassIconButton(icon = Icons.Default.Search, onClick = onOpenSearch)
                         GlassIconButton(icon = Icons.Default.Language, onClick = onOpenBrowser)
                     }
@@ -149,9 +164,9 @@ fun HomeScreen(
                 )
             }
 
-            // === ROTTA EPISODI (Segmented Control Liquido) ===
+            // === ROTTA EPISODI (Ruota 3D Liquida Liquid Glass) ===
             item {
-                RottaEpisodiSegmented(
+                RottaEpisodiWheel3D(
                     currentEpisode = selectedEpisode,
                     saga = selectedSaga,
                     watched = watchedEpisodes,
@@ -161,19 +176,6 @@ fun HomeScreen(
                         }
                     }
                 )
-            }
-
-            // === SEZIONE "QUESTA SETTIMANA" (solo se ha dati) ===
-            if (thisWeekMs > 0L || dailyStreak > 1) {
-                item {
-                    ThisWeekStrip(
-                        thisWeekMs = thisWeekMs,
-                        streak = dailyStreak,
-                        avgMs = avgMs,
-                        daysSince = daysSince,
-                        onClick = onOpenStreak
-                    )
-                }
             }
 
             // === CAROUSEL EPISODI SAGA (numeretti a scorrimento orizzontale) ===
@@ -193,13 +195,7 @@ fun HomeScreen(
                             style = AppType.Caption.copy(color = AppColors.TextTertiary)
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Tocca un episodio per impostarlo nel player sopra",
-                        style = AppType.Caption.copy(color = AppColors.TextTertiary),
-                        fontSize = 11.sp
-                    )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(14.dp))
                     LazyRow(
                         state = carouselState,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -214,8 +210,11 @@ fun HomeScreen(
                                 isWatched = watchedEpisodes.contains(ep),
                                 savedPosition = epSavedPos,
                                 onClick = {
-                                    // Seleziona l'episodio modificando il player sopra, NON avviando il video direttamente!
+                                    // Seleziona l'episodio modificando il player sopra
                                     selectEpisode(ep)
+                                },
+                                onToggleWatched = {
+                                    onToggleWatched(ep)
                                 }
                             )
                         }
@@ -244,6 +243,9 @@ fun HomeScreen(
                     },
                     onPlayDirect = {
                         onPlay(ep, epSavedPos)
+                    },
+                    onToggleWatched = {
+                        onToggleWatched(ep)
                     }
                 )
             }
@@ -351,6 +353,54 @@ private fun HeroEpisodeCard(
                 )
                 .padding(18.dp)
         ) {
+            // Barra di progressione dell'episodio: posizionata in alto nella card, appare solo se l'episodio è in corso
+            if (savedPosition > 10_000L && !isWatched) {
+                val totalEpisodeMs = 24 * 60 * 1000f
+                val epProgress = (savedPosition.toFloat() / totalEpisodeMs).coerceIn(0.02f, 1f)
+                val watchedMinutes = (savedPosition / 60_000L).coerceAtLeast(1L)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "In corso • da ${formatTime(savedPosition)}",
+                            style = AppType.Caption.copy(
+                                color = Color.White.copy(alpha = 0.90f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                        Text(
+                            "${watchedMinutes}m / 24m",
+                            style = AppType.Caption.copy(
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(5.dp))
+
+                    LinearProgressIndicator(
+                        progress = { epProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.5.dp)
+                            .clip(AppShape.Pill),
+                        color = AppColors.Accent,
+                        trackColor = Color.White.copy(alpha = 0.18f)
+                    )
+                }
+            }
+
             // Riga superiore: Badge stato + Saga + Tipo + Stella Preferito
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -439,51 +489,6 @@ private fun HeroEpisodeCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Barra di progressione dell'episodio: appare solo se l'episodio è in corso
-            if (savedPosition > 10_000L && !isWatched) {
-                Spacer(Modifier.height(14.dp))
-                val totalEpisodeMs = 24 * 60 * 1000f
-                val epProgress = (savedPosition.toFloat() / totalEpisodeMs).coerceIn(0.02f, 1f)
-                val watchedMinutes = (savedPosition / 60_000L).coerceAtLeast(1L)
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "In corso • da ${formatTime(savedPosition)}",
-                            style = AppType.Caption.copy(
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        )
-                        Text(
-                            "${watchedMinutes}m / 24m",
-                            style = AppType.Caption.copy(
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-
-                    Spacer(Modifier.height(5.dp))
-
-                    LinearProgressIndicator(
-                        progress = { epProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.5.dp)
-                            .clip(AppShape.Pill),
-                        color = AppColors.Accent,
-                        trackColor = Color.White.copy(alpha = 0.15f)
-                    )
-                }
-            }
-
             Spacer(Modifier.height(18.dp))
 
             // Bottone Play compatto e prominente con testo adattivo
@@ -527,19 +532,147 @@ private fun HeroEpisodeCard(
 }
 
 /**
- * Segmented Control "Rotta Episodi" Liquido:
- * Mostra i segmenti Precedente • Centrale (Attuale) • Successivo
- * Include la barra di progressione della saga (episodi visti e rimanenti)
+ * Badge Streak Minimale in alto con fiammella animata e numerino pulito.
  */
 @Composable
-private fun RottaEpisodiSegmented(
+fun MinimalStreakBadge(
+    streak: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "minimalStreak")
+    val flameScale by infiniteTransition.animateFloat(
+        initialValue = 0.90f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(750, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flameScale"
+    )
+    val flameRotation by infiniteTransition.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flameRotation"
+    )
+
+    Surface(
+        shape = AppShape.Pill,
+        color = Color(0x24FF4500),
+        border = BorderStroke(
+            0.8.dp,
+            Brush.linearGradient(
+                listOf(
+                    Color(0xFFFF5722).copy(alpha = 0.85f),
+                    Color(0xFFFF9800).copy(alpha = 0.45f)
+                )
+            )
+        ),
+        modifier = modifier.hapticPress(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocalFireDepartment,
+                contentDescription = "Streak $streak giorni",
+                tint = Color(0xFFFF5722),
+                modifier = Modifier
+                    .size(17.dp)
+                    .graphicsLayer {
+                        scaleX = flameScale
+                        scaleY = flameScale
+                        rotationZ = flameRotation
+                    }
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = "$streak",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 13.sp
+            )
+        }
+    }
+}
+
+/**
+ * Ruota 3D "Rotta Episodi" in stile Liquid Glass iOS:
+ * - Scorrimento orizzontale a ruota cilindrica 3D
+ * - Lente 3D centrale fissa (liquid glass con bordo speculare e riflesso glare)
+ * - Distorsione ottica ai bordi: rotazione Y 3D, scala prospettica e trasparenza graduata
+ * - Solo numeri grandi (senza scritte superflue "ROTTA EPISODI", "Precedente", etc.)
+ * - Feedback aptico dinamico ad ogni scatto sotto la lente
+ * - Barra di progressione della saga (episodi visti e rimanenti)
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RottaEpisodiWheel3D(
     currentEpisode: Int,
     saga: OnePieceSaga,
     watched: Set<Int>,
     onSelect: (Int) -> Unit
 ) {
-    val prevEp = if (currentEpisode > 1) currentEpisode - 1 else null
-    val nextEp = if (currentEpisode < OnePieceHelper.TOTAL_AIRING_EPISODES) currentEpisode + 1 else null
+    val coroutineScope = rememberCoroutineScope()
+    val hapticTick = rememberHapticTick()
+    val density = LocalDensity.current
+    val totalEpisodes = OnePieceHelper.TOTAL_AIRING_EPISODES
+
+    val itemWidthDp = 76.dp
+    val itemWidthPx = with(density) { itemWidthDp.toPx() }
+
+    val initialIndex = (currentEpisode - 1).coerceIn(0, totalEpisodes - 1)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+
+    // Sincronizza lo scorrimento se currentEpisode cambia da fuori
+    LaunchedEffect(currentEpisode) {
+        val targetIdx = (currentEpisode - 1).coerceIn(0, totalEpisodes - 1)
+        if (!listState.isScrollInProgress) {
+            val currentScrollUnit = listState.firstVisibleItemIndex +
+                (if (itemWidthPx > 0f) listState.firstVisibleItemScrollOffset / itemWidthPx else 0f)
+            val currentCentered = kotlin.math.round(currentScrollUnit).toInt()
+            if (currentCentered != targetIdx) {
+                listState.animateScrollToItem(targetIdx)
+            }
+        }
+    }
+
+    // Calcolo continuo e matematicamente esatto della posizione centrale (sub-pixel precision)
+    val currentScrollUnit by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex + (if (itemWidthPx > 0f) listState.firstVisibleItemScrollOffset / itemWidthPx else 0f)
+        }
+    }
+
+    val centeredIndex by remember {
+        derivedStateOf {
+            kotlin.math.round(currentScrollUnit).toInt().coerceIn(0, totalEpisodes - 1)
+        }
+    }
+
+    // Feedback aptico al passaggio di ogni numero sotto la lente
+    var lastHapticIndex by remember { mutableIntStateOf(initialIndex) }
+    LaunchedEffect(centeredIndex) {
+        if (centeredIndex != lastHapticIndex) {
+            hapticTick()
+            lastHapticIndex = centeredIndex
+        }
+    }
+
+    // Quando lo scorrimento finisce, aggiorna l'episodio selezionato
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress) {
+            val selectedEp = centeredIndex + 1
+            if (selectedEp != currentEpisode && selectedEp in 1..totalEpisodes) {
+                onSelect(selectedEp)
+            }
+        }
+    }
 
     // Conteggio episodi visti e rimanenti nella saga
     val totalInSaga = saga.range.count()
@@ -549,172 +682,131 @@ private fun RottaEpisodiSegmented(
     val remainingInSaga = (totalInSaga - watchedInSaga).coerceAtLeast(0)
     val sagaProgress = if (totalInSaga > 0) (watchedInSaga.toFloat() / totalInSaga).coerceIn(0f, 1f) else 0f
 
+    val hazeState = LocalHazeState.current
+
     Surface(
         shape = AppShape.Card,
         color = AppColors.Glass1,
         border = BorderStroke(1.dp, AppColors.GlassBorder),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidGlass(
+                hazeState = hazeState,
+                shape = AppShape.Card,
+                tintColor = Color(0x2412121C),
+                blurRadius = 24.dp,
+                borderAlpha = 0.30f
+            )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    "ROTTA EPISODI",
-                    style = AppType.Caption.copy(color = AppColors.TextTertiary, letterSpacing = 1.2.sp),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Precedente • Attuale • Successivo",
-                    style = AppType.Caption.copy(color = AppColors.TextTertiary, fontSize = 10.sp)
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-
+        Column(
+            modifier = Modifier.padding(vertical = 14.dp, horizontal = 14.dp)
+        ) {
+            // Contenitore ruota 3D Liquid Glass
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
-                    .clip(AppShape.Button)
-                    .background(AppColors.Glass0)
-                    .border(0.5.dp, AppColors.Separator, AppShape.Button)
-                    .padding(3.dp)
+                    .height(76.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(AppColors.Glass0),
+                contentAlignment = Alignment.Center
             ) {
-                val segmentWidth = maxWidth / 3f
+                val viewportWidth = maxWidth
+                val horizontalPadding = (viewportWidth - itemWidthDp) / 2
 
-                // Active segment indicator in middle
+                // Lente fissa 3D Liquid Glass centrale con shader rifrattivo AGSL e riflesso speculare
                 Box(
                     modifier = Modifier
-                        .offset(x = segmentWidth)
-                        .width(segmentWidth)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(AppColors.Accent.copy(alpha = 0.22f))
-                        .border(1.dp, AppColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(13.dp))
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .width(82.dp)
+                        .height(58.dp)
+                        .liquidGlass(
+                            hazeState = hazeState,
+                            shape = RoundedCornerShape(18.dp),
+                            tintColor = Color(0x30181826),
+                            blurRadius = 18.dp,
+                            borderAlpha = 0.70f,
+                            enableAgslRefraction = true
+                        )
                 ) {
-                    // PREV
+                    // Riflesso speculare superiore (glare ultra-lucido)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(13.dp))
-                            .then(
-                                if (prevEp != null) Modifier.hapticPress { onSelect(prevEp) }
-                                else Modifier
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (prevEp != null) {
-                            val isWatched = watched.contains(prevEp)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                if (isWatched) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(AppColors.Success)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                                Text(
-                                    "Ep. $prevEp",
-                                    style = AppType.Subhead.copy(
-                                        color = AppColors.TextSecondary,
-                                        fontWeight = FontWeight.SemiBold
+                            .fillMaxWidth()
+                            .height(16.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.32f),
+                                        Color.Transparent
                                     )
                                 )
-                            }
-                        } else {
-                            Text(
-                                "—",
-                                style = AppType.Subhead.copy(color = AppColors.TextTertiary)
                             )
-                        }
-                    }
+                    )
+                }
 
-                    // CURRENT
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(13.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val isWatched = watched.contains(currentEpisode)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                // Carosello orizzontale a ruota 3D continua e simmetrica
+                LazyRow(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = horizontalPadding),
+                    verticalAlignment = Alignment.CenterVertically,
+                    flingBehavior = rememberSnapFlingBehavior(listState)
+                ) {
+                    items(totalEpisodes) { index ->
+                        val epNumber = index + 1
+                        val isEpWatched = watched.contains(epNumber)
+                        val isCentered = (centeredIndex == index)
+
+                        Box(
+                            modifier = Modifier
+                                .width(itemWidthDp)
+                                .fillMaxHeight()
+                                .graphicsLayer {
+                                    val unit = listState.firstVisibleItemIndex +
+                                        (if (itemWidthPx > 0f) listState.firstVisibleItemScrollOffset / itemWidthPx else 0f)
+                                    val diff = index - unit
+                                    val absDiff = kotlin.math.abs(diff)
+                                    this.rotationY = (-diff * 30f).coerceIn(-65f, 65f)
+                                    this.scaleX = (1.05f - absDiff * 0.20f).coerceIn(0.68f, 1.05f)
+                                    this.scaleY = (1.05f - absDiff * 0.20f).coerceIn(0.68f, 1.05f)
+                                    this.alpha = (1.0f - absDiff * 0.38f).coerceIn(0.12f, 1.0f)
+                                    this.cameraDistance = 12f * density.density
+                                }
+                                .hapticPress {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(index)
+                                    }
+                                    onSelect(epNumber)
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            if (isWatched) {
+                            // Cifra dell'episodio: SEMPRE centrata verticalmente e orizzontalmente
+                            Text(
+                                text = "$epNumber",
+                                fontSize = 24.sp,
+                                fontWeight = if (isCentered) FontWeight.Black else FontWeight.Bold,
+                                color = when {
+                                    isCentered -> Color.White
+                                    isEpWatched -> Color(0xFF81C784) // Verde chiaro smeraldo: chiarissimo a colpo d'occhio
+                                    else -> AppColors.TextPrimary.copy(alpha = 0.85f)
+                                },
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+
+                            // Pallino verde dell'episodio visto: ancorato in basso al centro
+                            // Non altera di mezzo pixel la posizione verticale della cifra!
+                            if (isEpWatched) {
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 7.dp)
+                                        .size(5.dp)
                                         .clip(CircleShape)
                                         .background(AppColors.Success)
                                 )
-                                Spacer(Modifier.width(5.dp))
                             }
-                            Text(
-                                "Ep. $currentEpisode",
-                                style = AppType.Headline.copy(
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Black
-                                )
-                            )
-                        }
-                    }
-
-                    // NEXT
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(13.dp))
-                            .then(
-                                if (nextEp != null) Modifier.hapticPress { onSelect(nextEp) }
-                                else Modifier
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (nextEp != null) {
-                            val isWatched = watched.contains(nextEp)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    "Ep. $nextEp",
-                                    style = AppType.Subhead.copy(
-                                        color = AppColors.TextSecondary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                )
-                                if (isWatched) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(AppColors.Success)
-                                    )
-                                }
-                            }
-                        } else {
-                            Text(
-                                "—",
-                                style = AppType.Subhead.copy(color = AppColors.TextTertiary)
-                            )
                         }
                     }
                 }
@@ -763,72 +855,34 @@ private fun RottaEpisodiSegmented(
     }
 }
 
-@Composable
-private fun ThisWeekStrip(
-    thisWeekMs: Long,
-    streak: Int,
-    avgMs: Long,
-    daysSince: Int,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = AppShape.Card,
-        color = AppColors.Glass1,
-        border = BorderStroke(0.5.dp, AppColors.GlassBorder),
-        modifier = Modifier
-            .fillMaxWidth()
-            .hapticPress(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.LocalFireDepartment,
-                contentDescription = null,
-                tint = AppColors.Accent,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Questa settimana",
-                    style = AppType.Caption.copy(color = AppColors.TextTertiary),
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (thisWeekMs > 0) formatDuration(thisWeekMs) else "$streak giorni di streak",
-                    style = AppType.Headline.copy(color = AppColors.TextPrimary)
-                )
-            }
-            if (avgMs > 0) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        "≈ ${formatDurationShort(avgMs)}/ep",
-                        style = AppType.Subhead.copy(color = AppColors.TextSecondary)
-                    )
-                    Text(
-                        if (daysSince > 0) "da $daysSince giorni" else "",
-                        style = AppType.Caption.copy(color = AppColors.TextTertiary)
-                    )
-                }
-            }
-        }
-    }
-}
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodePill(
     episodeNumber: Int,
     isSelected: Boolean,
     isWatched: Boolean,
     savedPosition: Long = 0L,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onToggleWatched: () -> Unit
 ) {
-    val bgColor = if (isSelected) AppColors.Accent else AppColors.Glass1
-    val textColor = if (isSelected) Color.White else AppColors.TextPrimary
-    val border = if (isSelected) AppColors.Accent else AppColors.GlassBorder
+    val haptic = LocalHapticFeedback.current
+    var lastActionWasMarkWatched by remember { mutableStateOf<Boolean?>(null) }
+
+    val bgColor = when {
+        isSelected -> AppColors.Accent
+        isWatched -> Color(0x1F4CAF50)
+        else -> AppColors.Glass1
+    }
+    val textColor = when {
+        isSelected -> Color.White
+        isWatched -> Color(0xFF81C784)
+        else -> AppColors.TextPrimary
+    }
+    val border = when {
+        isSelected -> AppColors.Accent
+        isWatched -> Color(0x4D4CAF50)
+        else -> AppColors.GlassBorder
+    }
 
     Box(
         modifier = Modifier
@@ -840,37 +894,75 @@ private fun EpisodePill(
                 if (!isSelected) Modifier.border(0.5.dp, border, AppShape.Card)
                 else Modifier
             )
-            .hapticPress(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    val willBeWatched = !isWatched
+                    lastActionWasMarkWatched = willBeWatched
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onToggleWatched()
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "$episodeNumber",
-                style = AppType.Headline.copy(color = textColor),
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-            if (isWatched && !isSelected) {
-                Spacer(Modifier.height(2.dp))
+        // Cifra dell'episodio: SEMPRE rigorosamente centrata, identica altezza su tutte le card
+        Text(
+            "$episodeNumber",
+            style = AppType.Headline.copy(color = textColor),
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            modifier = Modifier.align(Alignment.Center)
+        )
+
+        // Pallino di stato ancorato in basso al centro: non altera la posizione del numero
+        if (!isSelected) {
+            if (isWatched) {
                 Box(
                     modifier = Modifier
-                        .size(4.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 7.dp)
+                        .size(5.dp)
                         .clip(CircleShape)
                         .background(AppColors.Success)
                 )
-            } else if (savedPosition > 10_000L && !isSelected) {
-                Spacer(Modifier.height(2.dp))
+            } else if (savedPosition > 10_000L) {
                 Box(
                     modifier = Modifier
-                        .size(4.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 7.dp)
+                        .size(5.dp)
                         .clip(CircleShape)
                         .background(AppColors.Gold)
+                )
+            }
+        }
+
+        // Overlay pop animato con icona corretta (spunta verde se confermo, x grigia se tolgo)
+        if (lastActionWasMarkWatched != null) {
+            val isConfirmedWatched = lastActionWasMarkWatched == true
+            LaunchedEffect(lastActionWasMarkWatched) {
+                kotlinx.coroutines.delay(650)
+                lastActionWasMarkWatched = null
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(AppShape.Card)
+                    .background(Color.Black.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isConfirmedWatched) Icons.Default.CheckCircle else Icons.Default.Close,
+                    contentDescription = if (isConfirmedWatched) "Segnato come visto" else "Rimosso dai visti",
+                    tint = if (isConfirmedWatched) AppColors.Success else Color(0xFFB0BEC5),
+                    modifier = Modifier.size(26.dp)
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UpcomingEpisodeRow(
     episodeNumber: Int,
@@ -878,8 +970,10 @@ private fun UpcomingEpisodeRow(
     savedPosition: Long = 0L,
     isSelected: Boolean = false,
     onClick: () -> Unit,
-    onPlayDirect: () -> Unit
+    onPlayDirect: () -> Unit,
+    onToggleWatched: () -> Unit = {}
 ) {
+    val haptic = LocalHapticFeedback.current
     val saga = remember(episodeNumber) { OnePieceHelper.getSagaForEpisode(episodeNumber) }
     val type = remember(episodeNumber) { OnePieceHelper.getEpisodeType(episodeNumber) }
 
@@ -892,7 +986,13 @@ private fun UpcomingEpisodeRow(
                 if (isSelected) Modifier.border(1.dp, AppColors.Accent.copy(alpha = 0.5f), AppShape.Card)
                 else Modifier
             )
-            .hapticPress(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onToggleWatched()
+                }
+            )
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -901,7 +1001,13 @@ private fun UpcomingEpisodeRow(
                 .size(44.dp)
                 .clip(AppShape.Small)
                 .background(AppColors.Glass2)
-                .hapticPress(onClick = onPlayDirect),
+                .combinedClickable(
+                    onClick = onPlayDirect,
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggleWatched()
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(

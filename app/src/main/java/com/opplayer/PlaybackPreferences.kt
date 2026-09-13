@@ -20,7 +20,7 @@ class PlaybackPreferences(private val context: Context) {
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "op_streak_channel"
         const val NOTIFICATION_ID = 1001
-        const val CURRENT_DATA_VERSION = 2
+        const val CURRENT_DATA_VERSION = 3
     }
 
     init {
@@ -31,16 +31,22 @@ class PlaybackPreferences(private val context: Context) {
     private fun applyBackupMigrationIfNeeded() {
         val currentVersion = prefs.getInt("user_backup_version", 0)
         if (currentVersion < CURRENT_DATA_VERSION) {
-            val watchedSet = (1..537).map { it.toString() }.toSet()
+            val currentWatched = prefs.getStringSet("watched_set", null)
+                ?.mapNotNull { it.toIntOrNull() }?.toMutableSet() ?: mutableSetOf()
+            currentWatched.addAll(1..539)
+
+            val currentLast = prefs.getInt("last_episode", 539)
+            val newLast = if (currentLast <= 539) 540 else currentLast
+
             prefs.edit()
                 .putInt("user_backup_version", CURRENT_DATA_VERSION)
-                .putInt("last_episode", 539)
+                .putInt("last_episode", newLast)
                 .putLong("last_position_ms", 0L)
                 .putInt("daily_streak", 8)
                 .putString("last_watch_date", "")
                 .putLong("bounty_beli", 0L)
-                .putStringSet("watched_set", watchedSet)
-                .putString("last_url", "https://onepiecepower.net/episodio-539")
+                .putStringSet("watched_set", currentWatched.map { it.toString() }.toSet())
+                .putString("last_url", "https://onepiecepower.net/episodio-$newLast")
                 .apply()
         }
     }
@@ -79,7 +85,7 @@ class PlaybackPreferences(private val context: Context) {
     }
 
     fun getLastUrl(): String? = prefs.getString("last_url", null)
-    fun getLastEpisode(): Int = prefs.getInt("last_episode", 539)
+    fun getLastEpisode(): Int = prefs.getInt("last_episode", 540)
     fun getLastPositionMs(): Long = prefs.getLong("last_position_ms", 0L)
     fun getEpisodePositionMs(episodeNumber: Int): Long = prefs.getLong("ep_pos_$episodeNumber", 0L)
 
@@ -147,11 +153,16 @@ class PlaybackPreferences(private val context: Context) {
     fun getWatchedEpisodes(): Set<Int> {
         val raw = prefs.getStringSet("watched_set", null)
         return if (raw == null) {
-            val initSet = (1..537).toSet()
+            val initSet = (1..539).toSet()
             prefs.edit().putStringSet("watched_set", initSet.map { it.toString() }.toSet()).apply()
             initSet
         } else {
-            raw.mapNotNull { it.toIntOrNull() }.toSet()
+            val parsed = raw.mapNotNull { it.toIntOrNull() }.toMutableSet()
+            if (!parsed.contains(539) || !parsed.contains(538)) {
+                parsed.addAll(1..539)
+                prefs.edit().putStringSet("watched_set", parsed.map { it.toString() }.toSet()).apply()
+            }
+            parsed
         }
     }
 
