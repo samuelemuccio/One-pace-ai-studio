@@ -207,3 +207,33 @@ private fun Modifier.borderTopGradient(shape: androidx.compose.ui.graphics.Shape
             shape = shape
         )
     )
+
+/** Palette narrativa per saga — colori ispirati al mondo di One Piece */
+object SagaPalette {
+    data class Colors(
+        val gradientStart: Color,
+        val gradientEnd: Color,
+        val accent: Color
+    )
+
+    fun forSaga(sagaName: String): Colors = when {
+        sagaName.contains("East Blue", true)      -> Colors(Color(0xFF1A2F5F), Color(0xFF0A0A0C), Color(0xFF3B82F6))
+        sagaName.contains("Arabasta", true)       -> Colors(Color(0xFF7A4B1A), Color(0xFF0A0A0C), Color(0xFFEAB308))
+        sagaName.contains("Sky Island", true)     -> Colors(Color(0xFF1E5C7A), Color(0xFF0A0A0C), Color(0xFF06B6D4))
+        sagaName.contains("Water 7", true)        -> Colors(Color(0xFF3F3F7A), Color(0xFF0A0A0C), Color(0xFF8B5CF6))
+        sagaName.contains("Thriller Bark", true)  -> Colors(Color(0xFF4A1A5C), Color(0xFF0A0A0C), Color(0xFFA855F7))
+        sagaName.contains("Sabaody", true)        -> Colors(Color(0xFF5C1A1A), Color(0xFF0A0A0C), Color(0xFFEF4444))
+        sagaName.contains("Impel Down", true)     -> Colors(Color(0xFF4A0F0F), Color(0xFF0A0A0C), Color(0xFFDC2626))
+        sagaName.contains("Marineford", true)     -> Colors(Color(0xFF6B1A1A), Color(0xFF0A0A0C), Color(0xFFF87171))
+        sagaName.contains("Post-War", true)       -> Colors(Color(0xFF3A1A3A), Color(0xFF0A0A0C), Color(0xFFEC4899))
+        sagaName.contains("Fish-Man", true)       -> Colors(Color(0xFF0F3A5C), Color(0xFF0A0A0C), Color(0xFF0EA5E9))
+        sagaName.contains("Punk Hazard", true)    -> Colors(Color(0xFF5C3A0F), Color(0xFF0A0A0C), Color(0xFFF97316))
+        sagaName.contains("Dressrosa", true)      -> Colors(Color(0xFF6B0F3A), Color(0xFF0A0A0C), Color(0xFFF43F5E))
+        sagaName.contains("Zou", true)            -> Colors(Color(0xFF0F4A2A), Color(0xFF0A0A0C), Color(0xFF22C55E))
+        sagaName.contains("Whole Cake", true)     -> Colors(Color(0xFF5C1A4A), Color(0xFF0A0A0C), Color(0xFFEC4899))
+        sagaName.contains("Levely", true)         -> Colors(Color(0xFF4A4A0F), Color(0xFF0A0A0C), Color(0xFFEAB308))
+        sagaName.contains("Wano", true)           -> Colors(Color(0xFF5C0F0F), Color(0xFF0A0A0C), Color(0xFFDC2626))
+        sagaName.contains("Egghead", true)        -> Colors(Color(0xFF2A0F5C), Color(0xFF0A0A0C), Color(0xFFA78BFA))
+        else                                       -> Colors(Color(0xFF1A1A2E), Color(0xFF0A0A0C), Color(0xFFFF453A))
+    }
+}

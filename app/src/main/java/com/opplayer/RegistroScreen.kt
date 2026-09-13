@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -153,8 +154,8 @@ fun RegistroScreen(
             // === STRIP METRICHE TEMPO REALE ===
             item {
                 RealTimeMetricsRow(
-                    totalWatchFormatted = formatDuration(totalWatchMs),
-                    avgWatchFormatted = formatDuration(avgWatchMs),
+                    totalWatchFormatted = if (totalWatchMs > 0) formatDuration(totalWatchMs) else "—",
+                    avgWatchFormatted = if (avgWatchMs > 0) formatDuration(avgWatchMs) else "—",
                     streak = dailyStreak,
                     sessions = validSessionsCount
                 )
@@ -516,30 +517,58 @@ private fun SagaCardItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Cerchio percentuale o spunta di completamento
+            // Cerchio progresso con anello colorato
             Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (completed) AppColors.Success.copy(alpha = 0.20f)
-                        else AppColors.Glass2
-                    ),
+                modifier = Modifier.size(52.dp),
                 contentAlignment = Alignment.Center
             ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val stroke = 3.dp.toPx()
+                    val radius = (size.minDimension - stroke) / 2f
+                    // Track grigio
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.08f),
+                        radius = radius,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
+                    )
+                    // Arco di progresso
+                    val ringColor = when {
+                        completed -> AppColors.Success
+                        progress >= 0.5f -> AppColors.Accent
+                        progress > 0f -> AppColors.Warning
+                        else -> Color.White.copy(alpha = 0.15f)
+                    }
+                    if (progress > 0f) {
+                        drawArc(
+                            color = ringColor,
+                            startAngle = -90f,
+                            sweepAngle = (progress * 360f).coerceIn(0f, 359.9f),
+                            useCenter = false,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                width = stroke,
+                                cap = androidx.compose.ui.graphics.StrokeCap.Round
+                            ),
+                            topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+                            size = androidx.compose.ui.geometry.Size(
+                                size.width - stroke,
+                                size.height - stroke
+                            )
+                        )
+                    }
+                }
                 if (completed) {
                     Icon(
                         Icons.Default.Check,
-                        contentDescription = "Completata",
+                        contentDescription = null,
                         tint = AppColors.Success,
                         modifier = Modifier.size(22.dp)
                     )
                 } else {
                     Text(
-                        "${(progress * 100).toInt()}%",
+                        "${(progress * 100).toInt()}",
                         style = AppType.Caption.copy(color = AppColors.TextPrimary),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -633,6 +662,17 @@ fun SagaDetailDialog(
                         )
                     )
             ) {
+                // Drag handle iOS style
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(AppShape.Pill)
+                        .background(Color.White.copy(alpha = 0.30f))
+                        .align(Alignment.CenterHorizontally)
+                )
+
                 // Header Pop-up
                 Column(
                     modifier = Modifier

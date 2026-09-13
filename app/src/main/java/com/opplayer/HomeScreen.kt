@@ -1,14 +1,23 @@
 package com.opplayer
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -29,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     prefs: PlaybackPreferences,
@@ -139,20 +149,17 @@ fun HomeScreen(
                 )
             }
 
-            // === TRIS DI MEMORIA NAVIGAZIONE (Precedente • Attuale • Successivo) ===
+            // === ROTTA EPISODI (Segmented Control Liquido) ===
             item {
-                EpisodeMemoryTrioRow(
-                    prevEp = prevEpisode,
-                    prevWatched = isPrevWatched,
-                    prevPos = prevPos,
-                    currentEp = selectedEpisode,
-                    currentWatched = isWatched,
-                    currentPos = selectedSavedPosition,
-                    nextEp = nextEpisode,
-                    nextWatched = isNextWatched,
-                    nextPos = nextPos,
-                    onSelectPrev = { prevEpisode?.let { selectEpisode(it) } },
-                    onSelectNext = { nextEpisode?.let { selectEpisode(it) } }
+                RottaEpisodiSegmented(
+                    currentEpisode = selectedEpisode,
+                    saga = selectedSaga,
+                    watched = watchedEpisodes,
+                    onSelect = { ep ->
+                        if (ep in 1..OnePieceHelper.TOTAL_AIRING_EPISODES) {
+                            selectEpisode(ep)
+                        }
+                    }
                 )
             }
 
@@ -196,7 +203,8 @@ fun HomeScreen(
                     LazyRow(
                         state = carouselState,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(horizontal = 0.dp)
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                        flingBehavior = rememberSnapFlingBehavior(carouselState)
                     ) {
                         items(sagaEpisodes, key = { it }) { ep ->
                             val epSavedPos = prefs.getEpisodePositionMs(ep)
@@ -290,6 +298,32 @@ private fun HeroEpisodeCard(
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
+    val palette = remember(saga.name) { SagaPalette.forSaga(saga.name) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "dotPulse")
+    val dotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotAlpha"
+    )
+
+    val isCompleting = isWatched
+    val isInProgress = savedPosition > 10_000L
+    val badgeColor = when {
+        isCompleting -> AppColors.Success
+        isInProgress -> AppColors.Success
+        else -> AppColors.TextSecondary
+    }
+    val badgeText = when {
+        isCompleting -> "COMPLETATO"
+        isInProgress -> "IN CORSO"
+        else -> "DA GUARDARE"
+    }
+
     Surface(
         shape = AppShape.CardBig,
         color = AppColors.Glass2,
@@ -297,7 +331,7 @@ private fun HeroEpisodeCard(
             1.dp,
             Brush.linearGradient(
                 colors = listOf(
-                    Color(saga.tagColor).copy(alpha = 0.5f),
+                    palette.accent.copy(alpha = 0.5f),
                     AppColors.GlassBorder
                 )
             )
@@ -309,11 +343,10 @@ private fun HeroEpisodeCard(
         Column(
             modifier = Modifier
                 .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(saga.tagColor).copy(alpha = 0.18f),
-                            AppColors.Glass1
-                        )
+                    Brush.linearGradient(
+                        colors = listOf(palette.gradientStart, palette.gradientEnd),
+                        start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                        end = androidx.compose.ui.geometry.Offset(800f, 1600f)
                     )
                 )
                 .padding(18.dp)
@@ -323,38 +356,31 @@ private fun HeroEpisodeCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val badgeColor = when {
-                    isWatched -> AppColors.Success
-                    savedPosition > 10_000L -> AppColors.Accent
-                    else -> AppColors.TextSecondary
-                }
-                val badgeText = when {
-                    isWatched -> "COMPLETATO"
-                    savedPosition > 10_000L -> "IN CORSO"
-                    else -> "DA GUARDARE"
-                }
-
                 Surface(
                     shape = AppShape.Chip,
-                    color = badgeColor.copy(alpha = 0.20f)
+                    color = Color.White.copy(alpha = 0.12f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(badgeColor)
+                                .background(
+                                    if (isInProgress) AppColors.Success.copy(alpha = dotAlpha)
+                                    else badgeColor
+                                )
                         )
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             badgeText,
                             style = AppType.Caption.copy(
-                                color = badgeColor,
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold
-                            )
+                            ),
+                            letterSpacing = 1.sp
                         )
                     }
                 }
@@ -413,21 +439,52 @@ private fun HeroEpisodeCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (savedPosition > 10_000L) {
-                Spacer(Modifier.height(10.dp))
-                val estimatedProgress = (savedPosition.toFloat() / 1_440_000f).coerceIn(0.05f, 1f)
-                LinearProgressIndicator(
-                    progress = { estimatedProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(AppShape.Pill),
-                    color = AppColors.Accent,
-                    trackColor = AppColors.Glass2
-                )
+            // Barra di progressione dell'episodio: appare solo se l'episodio è in corso
+            if (savedPosition > 10_000L && !isWatched) {
+                Spacer(Modifier.height(14.dp))
+                val totalEpisodeMs = 24 * 60 * 1000f
+                val epProgress = (savedPosition.toFloat() / totalEpisodeMs).coerceIn(0.02f, 1f)
+                val watchedMinutes = (savedPosition / 60_000L).coerceAtLeast(1L)
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "In corso • da ${formatTime(savedPosition)}",
+                            style = AppType.Caption.copy(
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                        Text(
+                            "${watchedMinutes}m / 24m",
+                            style = AppType.Caption.copy(
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(5.dp))
+
+                    LinearProgressIndicator(
+                        progress = { epProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.5.dp)
+                            .clip(AppShape.Pill),
+                        color = AppColors.Accent,
+                        trackColor = Color.White.copy(alpha = 0.15f)
+                    )
+                }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(18.dp))
 
             // Bottone Play compatto e prominente con testo adattivo
             val playButtonText = when {
@@ -441,7 +498,7 @@ private fun HeroEpisodeCard(
                 color = AppColors.Accent,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(48.dp)
                     .hapticPress(onClick = onPlay)
             ) {
                 Row(
@@ -470,23 +527,28 @@ private fun HeroEpisodeCard(
 }
 
 /**
- * Card di memoria per il trio: Precedente • Centrale (Attuale) • Successivo.
- * Evita scambi di episodi e garantisce il controllo dello stato di visione e del timestamp.
+ * Segmented Control "Rotta Episodi" Liquido:
+ * Mostra i segmenti Precedente • Centrale (Attuale) • Successivo
+ * Include la barra di progressione della saga (episodi visti e rimanenti)
  */
 @Composable
-private fun EpisodeMemoryTrioRow(
-    prevEp: Int?,
-    prevWatched: Boolean,
-    prevPos: Long,
-    currentEp: Int,
-    currentWatched: Boolean,
-    currentPos: Long,
-    nextEp: Int?,
-    nextWatched: Boolean,
-    nextPos: Long,
-    onSelectPrev: () -> Unit,
-    onSelectNext: () -> Unit
+private fun RottaEpisodiSegmented(
+    currentEpisode: Int,
+    saga: OnePieceSaga,
+    watched: Set<Int>,
+    onSelect: (Int) -> Unit
 ) {
+    val prevEp = if (currentEpisode > 1) currentEpisode - 1 else null
+    val nextEp = if (currentEpisode < OnePieceHelper.TOTAL_AIRING_EPISODES) currentEpisode + 1 else null
+
+    // Conteggio episodi visti e rimanenti nella saga
+    val totalInSaga = saga.range.count()
+    val watchedInSaga = remember(saga, watched) {
+        saga.range.count { watched.contains(it) }
+    }
+    val remainingInSaga = (totalInSaga - watchedInSaga).coerceAtLeast(0)
+    val sagaProgress = if (totalInSaga > 0) (watchedInSaga.toFloat() / totalInSaga).coerceIn(0f, 1f) else 0f
+
     Surface(
         shape = AppShape.Card,
         color = AppColors.Glass1,
@@ -505,152 +567,197 @@ private fun EpisodeMemoryTrioRow(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Memoria Precedente • Attuale • Successivo",
+                    "Precedente • Attuale • Successivo",
                     style = AppType.Caption.copy(color = AppColors.TextTertiary, fontSize = 10.sp)
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .clip(AppShape.Button)
+                    .background(AppColors.Glass0)
+                    .border(0.5.dp, AppColors.Separator, AppShape.Button)
+                    .padding(3.dp)
             ) {
-                // PRECEDENTE
-                if (prevEp != null) {
-                    Surface(
-                        shape = AppShape.Card,
-                        color = AppColors.Surface1,
-                        border = BorderStroke(0.5.dp, AppColors.Separator),
+                val segmentWidth = maxWidth / 3f
+
+                // Active segment indicator in middle
+                Box(
+                    modifier = Modifier
+                        .offset(x = segmentWidth)
+                        .width(segmentWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(AppColors.Accent.copy(alpha = 0.22f))
+                        .border(1.dp, AppColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(13.dp))
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // PREV
+                    Box(
                         modifier = Modifier
                             .weight(1f)
-                            .hapticPress(onClick = onSelectPrev)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(13.dp))
+                            .then(
+                                if (prevEp != null) Modifier.hapticPress { onSelect(prevEp) }
+                                else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = null,
-                                    tint = AppColors.TextSecondary,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(Modifier.width(3.dp))
+                        if (prevEp != null) {
+                            val isWatched = watched.contains(prevEp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                if (isWatched) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(AppColors.Success)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                }
                                 Text(
                                     "Ep. $prevEp",
-                                    style = AppType.Caption.copy(color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
+                                    style = AppType.Subhead.copy(
+                                        color = AppColors.TextSecondary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 )
                             }
-                            Spacer(Modifier.height(3.dp))
+                        } else {
                             Text(
-                                text = when {
-                                    prevWatched -> "✓ Visto"
-                                    prevPos > 10_000L -> formatTime(prevPos)
-                                    else -> "Non iniziato"
-                                },
-                                style = AppType.Caption.copy(
-                                    color = when {
-                                        prevWatched -> AppColors.Success
-                                        prevPos > 10_000L -> AppColors.Gold
-                                        else -> AppColors.TextTertiary
-                                    },
-                                    fontSize = 10.sp
-                                ),
-                                maxLines = 1,
-                                textAlign = TextAlign.Center
+                                "—",
+                                style = AppType.Subhead.copy(color = AppColors.TextTertiary)
                             )
                         }
                     }
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
 
-                // CENTRALE / ATTUALE SELEZIONATO
-                Surface(
-                    shape = AppShape.Card,
-                    color = AppColors.Accent.copy(alpha = 0.18f),
-                    border = BorderStroke(1.5.dp, AppColors.Accent),
-                    modifier = Modifier.weight(1.2f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            "Ep. $currentEp",
-                            style = AppType.Body.copy(color = Color.White, fontWeight = FontWeight.Black)
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = when {
-                                currentWatched -> "✓ Visto"
-                                currentPos > 10_000L -> "A ${formatTime(currentPos)}"
-                                else -> "Pronto al via"
-                            },
-                            style = AppType.Caption.copy(
-                                color = if (currentWatched) AppColors.Success else AppColors.Accent,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            ),
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                // SUCCESSIVO
-                if (nextEp != null) {
-                    Surface(
-                        shape = AppShape.Card,
-                        color = AppColors.Surface1,
-                        border = BorderStroke(0.5.dp, AppColors.Separator),
+                    // CURRENT
+                    Box(
                         modifier = Modifier
                             .weight(1f)
-                            .hapticPress(onClick = onSelectNext)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(13.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        val isWatched = watched.contains(currentEpisode)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "Ep. $nextEp",
-                                    style = AppType.Caption.copy(color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
+                            if (isWatched) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(AppColors.Success)
                                 )
-                                Spacer(Modifier.width(3.dp))
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = null,
-                                    tint = AppColors.TextSecondary,
-                                    modifier = Modifier.size(12.dp)
-                                )
+                                Spacer(Modifier.width(5.dp))
                             }
-                            Spacer(Modifier.height(3.dp))
                             Text(
-                                text = when {
-                                    nextWatched -> "✓ Visto"
-                                    nextPos > 10_000L -> formatTime(nextPos)
-                                    else -> "Prossimo"
-                                },
-                                style = AppType.Caption.copy(
-                                    color = when {
-                                        nextWatched -> AppColors.Success
-                                        nextPos > 10_000L -> AppColors.Gold
-                                        else -> AppColors.TextTertiary
-                                    },
-                                    fontSize = 10.sp
-                                ),
-                                maxLines = 1,
-                                textAlign = TextAlign.Center
+                                "Ep. $currentEpisode",
+                                style = AppType.Headline.copy(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black
+                                )
                             )
                         }
                     }
-                } else {
-                    Spacer(Modifier.weight(1f))
+
+                    // NEXT
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(13.dp))
+                            .then(
+                                if (nextEp != null) Modifier.hapticPress { onSelect(nextEp) }
+                                else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (nextEp != null) {
+                            val isWatched = watched.contains(nextEp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    "Ep. $nextEp",
+                                    style = AppType.Subhead.copy(
+                                        color = AppColors.TextSecondary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                )
+                                if (isWatched) {
+                                    Spacer(Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(AppColors.Success)
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                "—",
+                                style = AppType.Subhead.copy(color = AppColors.TextTertiary)
+                            )
+                        }
+                    }
                 }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Barra di progressione della saga: quanti episodi visti e quanti ne mancano
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${saga.name} • $watchedInSaga / $totalInSaga visti",
+                        style = AppType.Caption.copy(
+                            color = AppColors.TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                    Text(
+                        if (remainingInSaga == 0) "Completata ✓" else "$remainingInSaga rimanenti",
+                        style = AppType.Caption.copy(
+                            color = if (remainingInSaga == 0) AppColors.Success else AppColors.Accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                LinearProgressIndicator(
+                    progress = { sagaProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(AppShape.Pill),
+                    color = if (remainingInSaga == 0) AppColors.Success else AppColors.Accent,
+                    trackColor = Color.White.copy(alpha = 0.10f)
+                )
             }
         }
     }

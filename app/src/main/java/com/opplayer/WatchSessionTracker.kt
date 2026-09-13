@@ -167,19 +167,28 @@ class WatchSessionTracker(private val context: Context) {
         val arr = getAllSessions()
         if (arr.length() == 0) return 0L
 
-        val firstWatchPerEp = mutableMapOf<Int, Long>()
+        // FIX: prima cerchiamo sessioni "completed" (visto confermato).
+        // Se non ce ne sono abbastanza (es. appena installato), allarghiamo
+        // il criterio alle prime visioni con almeno MIN_SESSION_MS attivi.
+        val strict = mutableMapOf<Int, Long>()
+        val loose  = mutableMapOf<Int, Long>()
+
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val ep = o.optInt("ep", -1)
             val idx = o.optInt("sessionIndex", 0)
             val completed = o.optBoolean("completed", false)
             val activeMs = o.optLong("activeMs", 0L)
-            if (ep < 0 || !completed || idx != 0) continue
+            if (ep < 0 || idx != 0) continue
             if (activeMs < MIN_SESSION_MS) continue
-            firstWatchPerEp[ep] = activeMs
+
+            loose[ep] = activeMs
+            if (completed) strict[ep] = activeMs
         }
-        if (firstWatchPerEp.isEmpty()) return 0L
-        return firstWatchPerEp.values.sum() / firstWatchPerEp.size
+
+        val source = if (strict.size >= 3) strict else loose
+        if (source.isEmpty()) return 0L
+        return source.values.sum() / source.size
     }
 
     fun getAverageActiveMsPerEpisode(): Long = getAverageFirstWatchTimeMs()
@@ -298,7 +307,7 @@ data class ProjectionResult(
 
 /** Formatta durata ms in "Xh Ym" o "Ym Zs" */
 fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "0m"
+    if (ms <= 0) return "—"
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
@@ -312,7 +321,7 @@ fun formatDuration(ms: Long): String {
 
 /** Formatta durata compatta "Xm" */
 fun formatDurationShort(ms: Long): String {
-    if (ms <= 0) return "0m"
+    if (ms <= 0) return "—"
     val min = ms / 60_000
     return if (min < 60) "${min}m" else "${min / 60}h ${min % 60}m"
 }

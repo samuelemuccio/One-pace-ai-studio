@@ -1328,6 +1328,7 @@ class MainActivity : ComponentActivity() {
                                                 NavItem(2, "Download", Icons.Default.FileDownload)
                                             )
                                         }
+                                        val hapticTick = rememberHapticTick()
 
                                         // LIQUID TEARDROP DROPLET PHYSICS WITH VOLUME CONSERVATION
                                         val targetPosition = currentTab.toFloat()
@@ -1457,6 +1458,9 @@ class MainActivity : ComponentActivity() {
                                                             .weight(1f)
                                                             .fillMaxHeight()
                                                             .iosSpringClick {
+                                                                if (item.tabIndex != currentTab) {
+                                                                    hapticTick()
+                                                                }
                                                                 if (item.tabIndex == 1) {
                                                                     watchedEpisodes = prefs.getWatchedEpisodes()
                                                                     favoriteEpisodes = prefs.getFavoriteEpisodes()
@@ -2293,8 +2297,17 @@ class MainActivity : ComponentActivity() {
                                 onNextEpisode = {
                                     val nextEp = currentEpisodeNumber + 1
                                     if (nextEp <= OnePieceHelper.TOTAL_AIRING_EPISODES) {
-                                        val nextPos = prefs.getEpisodePositionMs(nextEp)
-                                        playEpisode(nextEp, nextPos)
+                                        // FIX: azzera la posizione dell'episodio che stiamo per lasciare
+                                        // così non rimane "in sospeso" con l'ultima posizione.
+                                        prefs.saveLastPlayback(currentWebUrl, currentEpisodeNumber, 0L)
+
+                                        val nextUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, nextEp)
+                                        currentEpisodeNumber = nextEp
+                                        currentWebUrl = nextUrl
+                                        startFromPosition = 0L
+                                        isPlayerAdvancingNext = true
+                                        isAutoAdvancing = true
+                                        playEpisode(nextEp, 0L)
                                     } else {
                                         Toast.makeText(
                                             this@MainActivity,
@@ -2304,17 +2317,32 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onPositionChanged = { pos ->
-                                    val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
-                                    prefs.saveLastPlayback(currentWebUrl, ep, pos)
-                                    // Aggiorna la Home in tempo reale (fix bug "esci dal player,
-                                    // la posizione non si vede finché non riapri l'app")
-                                    savedPosition = pos
+                                    // FIX race condition: durante il cambio episodio il player
+                                    // può emettere un ultimo onPositionChanged riferito al
+                                    // vecchio episodio, ma currentWebUrl è già aggiornato
+                                    // al nuovo. Ignoriamo quell'ultimo tick.
+                                    if (!isPlayerAdvancingNext) {
+                                        val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
+                                        prefs.saveLastPlayback(currentWebUrl, ep, pos)
+                                        savedPosition = pos
+                                    }
                                 },
                                 onClose = {
                                     // Chiudi sessione di visione
                                     watchTracker.endEpisode(
                                         markCompleted = prefs.isEpisodeWatched(currentEpisodeNumber)
                                     )
+
+                                    // FIX: se stiamo chiudendo durante un cambio episodio,
+                                    // la posizione salvata è quella del vecchio episodio,
+                                    // non va applicata al nuovo.
+                                    if (isPlayerAdvancingNext) {
+                                        prefs.saveLastPlayback(
+                                            OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber),
+                                            currentEpisodeNumber,
+                                            0L
+                                        )
+                                    }
                                     // Sincronizza lo stato della Home con l'ultimo salvataggio
                                     savedPosition = prefs.getLastPositionMs()
                                     currentEpisodeNumber = prefs.getLastEpisode()
@@ -2341,6 +2369,26 @@ class MainActivity : ComponentActivity() {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
+                                    val splashShimmer = rememberInfiniteTransition(label = "splashShimmer")
+                                    val shimmerTranslate by splashShimmer.animateFloat(
+                                        initialValue = 0f,
+                                        targetValue = 1000f,
+                                        animationSpec = infiniteRepeatable(
+                                            animation = tween(1400, easing = LinearEasing),
+                                            repeatMode = RepeatMode.Restart
+                                        ),
+                                        label = "splashShimmerTranslate"
+                                    )
+                                    val shimmerBrush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.45f),
+                                            Color.White,
+                                            Color.White.copy(alpha = 0.45f)
+                                        ),
+                                        start = androidx.compose.ui.geometry.Offset(shimmerTranslate - 300f, 0f),
+                                        end = androidx.compose.ui.geometry.Offset(shimmerTranslate, 0f)
+                                    )
+
                                     LogPoseCompassIcon(
                                         isSelected = true,
                                         iconSize = 64.dp
@@ -2348,10 +2396,12 @@ class MainActivity : ComponentActivity() {
                                     Spacer(modifier = Modifier.height(18.dp))
                                     Text(
                                         text = "ONE PIECE",
-                                        color = Color.White,
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = 4.sp
+                                        style = TextStyle(
+                                            brush = shimmerBrush,
+                                            fontSize = 24.sp,
+                                            fontWeight = FontWeight.Black,
+                                            letterSpacing = 4.sp
+                                        )
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
