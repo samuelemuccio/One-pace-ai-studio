@@ -157,12 +157,7 @@ class PlaybackPreferences(private val context: Context) {
             prefs.edit().putStringSet("watched_set", initSet.map { it.toString() }.toSet()).apply()
             initSet
         } else {
-            val parsed = raw.mapNotNull { it.toIntOrNull() }.toMutableSet()
-            if (!parsed.contains(539) || !parsed.contains(538)) {
-                parsed.addAll(1..539)
-                prefs.edit().putStringSet("watched_set", parsed.map { it.toString() }.toSet()).apply()
-            }
-            parsed
+            raw.mapNotNull { it.toIntOrNull() }.toSet()
         }
     }
 

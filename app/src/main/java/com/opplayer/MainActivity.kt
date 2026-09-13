@@ -62,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -1321,17 +1323,23 @@ class MainActivity : ComponentActivity() {
                                         .padding(horizontal = 24.dp, vertical = 14.dp)
                                         .align(Alignment.BottomCenter)
                                 ) {
+                                    val navBarShape = RoundedCornerShape(26.dp)
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .iosShadow(radius = 22.dp, alpha = 0.55f)
-                                            .liquidGlass(
+                                            .graphicsLayer { clip = false }
+                                            .shadow(
+                                                elevation = 6.dp,
+                                                shape = navBarShape,
+                                                ambientColor = Color.Black.copy(alpha = 0.10f),
+                                                spotColor = Color.Black.copy(alpha = 0.15f)
+                                            )
+                                            .liquidGlassNav(
                                                 hazeState = appHazeState,
-                                                shape = AppShape.Capsule,
-                                                tintColor = Color(0x35101018),
-                                                blurRadius = 32.dp,
-                                                borderAlpha = 0.40f,
-                                                enableAgslRefraction = true
+                                                shape = navBarShape,
+                                                tintColor = Color(0x05FFFFFF),
+                                                blurRadius = 3.dp,
+                                                borderAlpha = 0.65f
                                             )
                                     ) {
                                         data class NavItem(val tabIndex: Int, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
@@ -1391,14 +1399,14 @@ class MainActivity : ComponentActivity() {
                                             // As horizontal width stretches from velocity, vertical height squashes down
                                             val stretchRatio = (liquidWidth.value / basePillWidth.value).coerceAtLeast(1f)
                                             val liquidHeight = (basePillHeight.value / kotlin.math.sqrt(stretchRatio.toDouble()).toFloat())
-                                                .coerceIn(26f, basePillHeight.value).dp
+                                                .coerceIn(28f, basePillHeight.value).dp
 
                                             // Droplet asymmetry: leading front is a bulbous dome, trailing tail tapers
                                             val speedMagnitude = kotlin.math.abs(delta).coerceIn(0f, 1.5f)
                                             val isMovingRight = delta >= 0f
 
-                                            val leadCorner = 24.dp
-                                            val trailCorner = (24f - (speedMagnitude * 10f)).coerceAtLeast(12f).dp
+                                            val leadCorner = 20.dp
+                                            val trailCorner = (20f - (speedMagnitude * 8f)).coerceAtLeast(12f).dp
 
                                             val dropletShape = RoundedCornerShape(
                                                 topStart = if (isMovingRight) trailCorner else leadCorner,
@@ -1407,54 +1415,35 @@ class MainActivity : ComponentActivity() {
                                                 bottomEnd = if (isMovingRight) leadCorner else trailCorner
                                             )
 
-                                            // THE VISIBLE GLOWING LIQUID DROPLET CAPSULE
-                                            Box(
-                                                modifier = Modifier
-                                                    .offset(x = leftX)
-                                                    .width(liquidWidth)
-                                                    .height(liquidHeight)
-                                                    .align(Alignment.CenterStart)
-                                                    .clip(dropletShape)
-                                                    .background(
-                                                        AppColors.AccentSoft
-                                                    )
-                                                    .border(
-                                                        width = 1.dp,
-                                                        color = AppColors.Accent.copy(alpha = 0.40f),
-                                                        shape = dropletShape
-                                                    )
-                                            ) {
-                                                // Glossy liquid specular sheen along top edge
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth(0.75f)
-                                                        .height(2.dp)
-                                                        .align(Alignment.TopCenter)
-                                                        .padding(top = 3.dp)
-                                                        .background(
-                                                            Brush.horizontalGradient(
-                                                                listOf(
-                                                                    Color.Transparent,
-                                                                    Color.White.copy(alpha = 0.55f),
-                                                                    Color.Transparent
-                                                                )
-                                                            )
-                                                        )
-                                                )
-                                            }
+                                            // Coordinate ottiche in pixel per il centro e il raggio della capsula/lente
+                                            val density = LocalDensity.current
+                                            val dropletCenterX = with(density) { (leftX + (liquidWidth / 2f)).toPx() }
+                                            val dropletCenterY = with(density) { (maxHeight / 2f).toPx() }
+                                            val dropletHalfW = with(density) { (liquidWidth / 2f).toPx() }
+                                            val dropletHalfH = with(density) { (liquidHeight / 2f).toPx() }
 
-                                            // Interactive Row containing the nav icons
+                                            // 1. LAYER ICONE (SOTTO LA LENTE):
+                                            // Distorsione ottica convessa AGSL: ingrandisce e rifrange dinamicamente ciò che si trova sotto la capsula
                                             Row(
-                                                modifier = Modifier.fillMaxSize(),
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .opticalDropletDistortion(
+                                                        centerX = dropletCenterX,
+                                                        centerY = dropletCenterY,
+                                                        halfWidth = dropletHalfW,
+                                                        halfHeight = dropletHalfH,
+                                                        zoom = 1.30f,
+                                                        curvature = 0.42f
+                                                    ),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 items.forEach { item ->
                                                     val isSelected = currentTab == item.tabIndex
                                                     val iconScale by animateFloatAsState(
-                                                        targetValue = if (isSelected) 1.16f else 1.0f,
+                                                        targetValue = if (isSelected) 1.25f else 0.95f,
                                                         animationSpec = spring(
-                                                            dampingRatio = 0.65f,
-                                                            stiffness = 350f
+                                                            dampingRatio = 0.55f,
+                                                            stiffness = 320f
                                                         ),
                                                         label = "navIconScale"
                                                     )
@@ -1486,19 +1475,22 @@ class MainActivity : ComponentActivity() {
                                                             },
                                                         contentAlignment = Alignment.Center
                                                     ) {
+                                                        val iconModifier = Modifier
+                                                            .size(24.dp)
+                                                            .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+
                                                         if (item.tabIndex == 1) {
                                                             LogPoseCompassIcon(
                                                                 isSelected = isSelected,
-                                                                iconSize = 23.dp
+                                                                iconSize = 23.dp,
+                                                                modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
                                                             )
                                                         } else {
                                                             Icon(
                                                                 imageVector = item.icon,
                                                                 contentDescription = item.label,
                                                                 tint = if (isSelected) Color.White else Color.White.copy(alpha = iconAlpha),
-                                                                modifier = Modifier
-                                                                    .size(24.dp)
-                                                                    .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                                                                modifier = iconModifier
                                                             )
                                                         }
 
@@ -1514,6 +1506,35 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                     }
                                                 }
+                                            }
+
+                                            // 2. LAYER CAPSULA ROSSA LIQUIDA TRASLUCIDA (SOPRA LE ICONE):
+                                            // Guscio di vetro liquido convesso con bordo e riflesso speculare superiore
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset(x = leftX)
+                                                    .width(liquidWidth)
+                                                    .height(liquidHeight)
+                                                    .align(Alignment.CenterStart)
+                                                    .liquidRedGlassCapsule(shape = dropletShape)
+                                            ) {
+                                                // Riflesso speculare lineare ad arco sul bordo superiore (luce solare riflessa)
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(2.dp)
+                                                        .align(Alignment.TopCenter)
+                                                        .padding(horizontal = 14.dp)
+                                                        .background(
+                                                            Brush.horizontalGradient(
+                                                                listOf(
+                                                                    Color.Transparent,
+                                                                    Color.White.copy(alpha = 0.85f),
+                                                                    Color.Transparent
+                                                                )
+                                                            )
+                                                        )
+                                                )
                                             }
                                         }
                                     }

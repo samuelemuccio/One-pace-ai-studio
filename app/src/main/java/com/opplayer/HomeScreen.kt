@@ -688,15 +688,7 @@ private fun RottaEpisodiWheel3D(
         shape = AppShape.Card,
         color = AppColors.Glass1,
         border = BorderStroke(1.dp, AppColors.GlassBorder),
-        modifier = Modifier
-            .fillMaxWidth()
-            .liquidGlass(
-                hazeState = hazeState,
-                shape = AppShape.Card,
-                tintColor = Color(0x2412121C),
-                blurRadius = 24.dp,
-                borderAlpha = 0.30f
-            )
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(vertical = 14.dp, horizontal = 14.dp)
@@ -712,36 +704,6 @@ private fun RottaEpisodiWheel3D(
             ) {
                 val viewportWidth = maxWidth
                 val horizontalPadding = (viewportWidth - itemWidthDp) / 2
-
-                // Lente fissa 3D Liquid Glass centrale con shader rifrattivo AGSL e riflesso speculare
-                Box(
-                    modifier = Modifier
-                        .width(82.dp)
-                        .height(58.dp)
-                        .liquidGlass(
-                            hazeState = hazeState,
-                            shape = RoundedCornerShape(18.dp),
-                            tintColor = Color(0x30181826),
-                            blurRadius = 18.dp,
-                            borderAlpha = 0.70f,
-                            enableAgslRefraction = true
-                        )
-                ) {
-                    // Riflesso speculare superiore (glare ultra-lucido)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(16.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.32f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                }
 
                 // Carosello orizzontale a ruota 3D continua e simmetrica
                 LazyRow(
@@ -765,11 +727,14 @@ private fun RottaEpisodiWheel3D(
                                         (if (itemWidthPx > 0f) listState.firstVisibleItemScrollOffset / itemWidthPx else 0f)
                                     val diff = index - unit
                                     val absDiff = kotlin.math.abs(diff)
-                                    this.rotationY = (-diff * 30f).coerceIn(-65f, 65f)
-                                    this.scaleX = (1.05f - absDiff * 0.20f).coerceIn(0.68f, 1.05f)
-                                    this.scaleY = (1.05f - absDiff * 0.20f).coerceIn(0.68f, 1.05f)
-                                    this.alpha = (1.0f - absDiff * 0.38f).coerceIn(0.12f, 1.0f)
-                                    this.cameraDistance = 12f * density.density
+                                    this.rotationY = (-diff * 28f).coerceIn(-60f, 60f)
+                                    // Ingrandimento ottico a lente convessa al passaggio sotto il centro
+                                    val lensZoom = (1.26f - absDiff * 0.34f).coerceIn(0.70f, 1.26f)
+                                    this.scaleX = lensZoom
+                                    this.scaleY = lensZoom
+                                    this.alpha = (1.0f - absDiff * 0.35f).coerceIn(0.18f, 1.0f)
+                                    // cameraDistance va in pixel reali: 2000f per una prospettiva morbida in stile iOS
+                                    this.cameraDistance = 2000f
                                 }
                                 .hapticPress {
                                     coroutineScope.launch {
@@ -800,15 +765,62 @@ private fun RottaEpisodiWheel3D(
                             if (isEpWatched) {
                                 Box(
                                     modifier = Modifier
+                                        .size(6.dp)
                                         .align(Alignment.BottomCenter)
-                                        .padding(bottom = 7.dp)
-                                        .size(5.dp)
+                                        .offset(y = (-12).dp)
                                         .clip(CircleShape)
-                                        .background(AppColors.Success)
+                                        .background(Color(0xFF66BB6A))
                                 )
                             }
                         }
                     }
+                }
+
+                // Lente convessa Liquid Glass centrale posizionata SOPRA il carosello:
+                // avvolge il numero al centro con riflessi ottici, glare e smusso a prisma
+                Box(
+                    modifier = Modifier
+                        .width(82.dp)
+                        .height(58.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.14f),
+                                    Color.White.copy(alpha = 0.02f),
+                                    Color.Black.copy(alpha = 0.18f)
+                                )
+                            )
+                        )
+                        .border(
+                            BorderStroke(
+                                1.2.dp,
+                                Brush.linearGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.90f),
+                                        Color.White.copy(alpha = 0.25f),
+                                        AppColors.Accent.copy(alpha = 0.70f),
+                                        Color.White.copy(alpha = 0.45f)
+                                    )
+                                )
+                            ),
+                            RoundedCornerShape(18.dp)
+                        )
+                ) {
+                    // Glare speculare superiore a calotta convessa
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(18.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.35f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
                 }
             }
 

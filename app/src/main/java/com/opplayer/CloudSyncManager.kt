@@ -160,7 +160,7 @@ class CloudSyncManager(private val context: Context) {
     fun checkAutoRestoreOnStartup(playbackPrefs: PlaybackPreferences): Boolean {
         val watched = playbackPrefs.getWatchedEpisodes()
         // Se l'utente ha solo una versione precedente e l'ultimo episodio è < 539
-        val isDefaultFreshInstall = (watched.size < 537 && playbackPrefs.getLastPositionMs() == 0L)
+        val isDefaultFreshInstall = (watched.isEmpty() && playbackPrefs.getLastPositionMs() == 0L)
         if (isDefaultFreshInstall) {
             val vaultData = loadLocalPersistentVault()
             if (vaultData != null) {
