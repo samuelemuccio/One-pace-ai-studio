@@ -629,7 +629,14 @@ class MainActivity : ComponentActivity() {
                 val savedEpisode = remember { prefs.getLastEpisode() }
                 var currentAudioLanguage by remember { mutableStateOf(prefs.getAudioLanguage()) }
                 val defaultStartUrl = OnePieceHelper.buildEpisodeUrl("", savedEpisode, currentAudioLanguage)
-                val savedUrl = remember { prefs.getLastUrl() ?: defaultStartUrl }
+                val rawSavedUrl = prefs.getLastUrl()
+                val savedUrl = remember {
+                    if (rawSavedUrl.isNullOrBlank() || rawSavedUrl.contains("onepiecepower.net") || !rawSavedUrl.contains("onepiecepower.com")) {
+                        defaultStartUrl
+                    } else {
+                        rawSavedUrl
+                    }
+                }
                 // Reattivo: si aggiorna in tempo reale quando il player salva
                 var savedPosition by remember { mutableLongStateOf(prefs.getLastPositionMs()) }
 
@@ -818,7 +825,7 @@ class MainActivity : ComponentActivity() {
                     val effectivePos = if (fromPos >= 0L) fromPos else prefs.getEpisodePositionMs(targetEp)
                     startFromPosition = effectivePos
                     savedPosition = effectivePos
-                    val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, targetEp, targetLang)
+                    val epUrl = OnePieceHelper.buildEpisodeUrl("", targetEp, targetLang)
                     currentWebUrl = epUrl
 
                     // Avvia tracking della sessione per statistiche
@@ -836,17 +843,10 @@ class MainActivity : ComponentActivity() {
                         return
                     }
 
-                    // 2. Se detectedVideoUrl corrisponde già all'episodio con stessa lingua richiesta
-                    if (language == null && detectedVideoUrl != null && isValidVideoStream(detectedVideoUrl!!) && currentWebUrl.contains("pagine/$targetEp")) {
-                        activeVideoUrl = detectedVideoUrl
-                        prefs.saveLastPlayback(epUrl, targetEp, effectivePos, targetLang)
-                        return
-                    }
-
-                    // Resetta per nuova risoluzione stream se stiamo cambiando lingua o episodio
+                    // Resetta per nuova risoluzione stream per garantire la lingua e l'episodio selezionati
                     detectedVideoUrl = null
 
-                    // 3. Risoluzione rapida in parallelo: sia StreamExtractor che WebView!
+                    // 2. Risoluzione rapida in parallelo: sia StreamExtractor che WebView!
                     isResolvingStream = true
                     resolvingEpisodeNumber = targetEp
                     isAutoAdvancing = true
@@ -973,11 +973,12 @@ class MainActivity : ComponentActivity() {
                                             if (isValidVideoStream(reqUrl)) {
                                                 view?.post {
                                                     detectedVideoUrl = reqUrl
-                                                    if (isAutoAdvancing || isResolvingStream || isPlayerAdvancingNext) {
+                                                    if (isAutoAdvancing || isResolvingStream || isPlayerAdvancingNext || isPlayerSwitchingLanguage) {
                                                         activeVideoUrl = reqUrl
                                                         isAutoAdvancing = false
                                                         isResolvingStream = false
                                                         isPlayerAdvancingNext = false
+                                                        isPlayerSwitchingLanguage = false
                                                     }
                                                 }
                                             }
@@ -1051,20 +1052,35 @@ class MainActivity : ComponentActivity() {
                                         savedPosition = savedPosition,
                                         audioLanguage = currentAudioLanguage,
                                         onLanguageChanged = { newLang ->
-                                            currentAudioLanguage = newLang
-                                            prefs.setAudioLanguage(newLang)
-                                            currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber, newLang)
-                                            Toast.makeText(
-                                                this@MainActivity,
-                                                "Traccia impostata: ${newLang.label}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            if (newLang == AudioLanguage.ITA && !OnePieceHelper.isDubbedInItalian(currentEpisodeNumber)) {
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "Episodio $currentEpisodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } else {
+                                                currentAudioLanguage = newLang
+                                                prefs.setAudioLanguage(newLang)
+                                                val cleanEpUrl = OnePieceHelper.buildEpisodeUrl("", currentEpisodeNumber, newLang)
+                                                currentWebUrl = cleanEpUrl
+                                                detectedVideoUrl = null
+                                                webViewInstance?.loadUrl(cleanEpUrl)
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "Audio: ${newLang.label} ${newLang.flag}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         },
                                         onPlay = { ep, pos -> playEpisode(ep, pos) },
                                         onEpisodeSelected = { ep ->
                                             currentEpisodeNumber = ep
                                             savedPosition = prefs.getEpisodePositionMs(ep)
                                             prefs.setLastEpisode(ep)
+                                            val cleanEpUrl = OnePieceHelper.buildEpisodeUrl("", ep, currentAudioLanguage)
+                                            currentWebUrl = cleanEpUrl
+                                            detectedVideoUrl = null
+                                            webViewInstance?.loadUrl(cleanEpUrl)
                                         },
                                         onToggleWatched = { ep ->
                                             prefs.toggleWatched(ep)
@@ -2390,7 +2406,7 @@ class MainActivity : ComponentActivity() {
                                     if (newLang == AudioLanguage.ITA && !OnePieceHelper.isDubbedInItalian(currentEpisodeNumber)) {
                                         Toast.makeText(
                                             this@MainActivity,
-                                            "Episodio $currentEpisodeNumber disponibile solo in SUB-ITA 🇯🇵 (non ancora doppiato in ITA)",
+                                            "Episodio $currentEpisodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } else {
@@ -2399,9 +2415,12 @@ class MainActivity : ComponentActivity() {
                                         isPlayerSwitchingLanguage = true
                                         savedPosition = currentPos
                                         startFromPosition = currentPos
-                                        val newEpUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber, newLang)
+                                        detectedVideoUrl = null
+                                        val newEpUrl = OnePieceHelper.buildEpisodeUrl("", currentEpisodeNumber, newLang)
                                         currentWebUrl = newEpUrl
                                         prefs.saveLastPlayback(newEpUrl, currentEpisodeNumber, currentPos, newLang)
+
+                                        webViewInstance?.loadUrl(newEpUrl)
 
                                         lifecycleScope.launch(Dispatchers.IO) {
                                             try {
@@ -2410,19 +2429,17 @@ class MainActivity : ComponentActivity() {
                                                     if (!directStream.isNullOrBlank()) {
                                                         activeVideoUrl = directStream
                                                         startFromPosition = currentPos
-                                                    } else {
-                                                        webViewInstance?.loadUrl(newEpUrl)
+                                                        isPlayerSwitchingLanguage = false
                                                     }
-                                                    isPlayerSwitchingLanguage = false
                                                     Toast.makeText(
                                                         this@MainActivity,
-                                                        "Traccia: ${newLang.label}",
+                                                        "Audio: ${newLang.label} ${newLang.flag}",
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
                                             } catch (e: Exception) {
                                                 withContext(Dispatchers.Main) {
-                                                    isPlayerSwitchingLanguage = false
+                                                    // Fallback WebView
                                                 }
                                             }
                                         }

@@ -26,6 +26,17 @@ class PlaybackPreferences(private val context: Context) {
     init {
         createNotificationChannel()
         applyBackupMigrationIfNeeded()
+        sanitizeLegacyUrlsIfNeeded()
+    }
+
+    private fun sanitizeLegacyUrlsIfNeeded() {
+        val savedUrl = prefs.getString("last_url", null)
+        if (savedUrl != null && (savedUrl.contains("onepiecepower.net") || !savedUrl.contains("onepiecepower.com"))) {
+            val ep = getLastEpisode()
+            val lang = getAudioLanguage()
+            val cleanUrl = OnePieceHelper.buildEpisodeUrl("", ep, lang)
+            prefs.edit().putString("last_url", cleanUrl).apply()
+        }
     }
 
     private fun applyBackupMigrationIfNeeded() {
@@ -44,6 +55,8 @@ class PlaybackPreferences(private val context: Context) {
             val yesterdayStr = SimpleDateFormat("yyyy-MM-dd", Locale.ITALY).format(cal.time)
 
             val existingStreak = prefs.getInt("daily_streak", 8).coerceAtLeast(8)
+            val initialLang = getAudioLanguage()
+            val cleanUrl = OnePieceHelper.buildEpisodeUrl("", newLast, initialLang)
 
             prefs.edit()
                 .putInt("user_backup_version", CURRENT_DATA_VERSION)
@@ -53,7 +66,7 @@ class PlaybackPreferences(private val context: Context) {
                 .putString("last_watch_date", yesterdayStr)
                 .putLong("bounty_beli", 0L)
                 .putStringSet("watched_set", currentWatched.map { it.toString() }.toSet())
-                .putString("last_url", "https://onepiecepower.net/episodio-$newLast")
+                .putString("last_url", cleanUrl)
                 .apply()
         }
     }
@@ -64,8 +77,13 @@ class PlaybackPreferences(private val context: Context) {
 
     fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long, language: AudioLanguage? = null) {
         val detectedLang = language ?: OnePieceHelper.detectLanguage(url)
+        val cleanUrl = if (url.contains("onepiecepower.net") || (!url.contains("onepiecepower.com") && !url.startsWith("/"))) {
+            OnePieceHelper.buildEpisodeUrl("", episodeNumber, detectedLang)
+        } else {
+            url
+        }
         val editor = prefs.edit()
-            .putString("last_url", url)
+            .putString("last_url", cleanUrl)
             .putInt("last_episode", episodeNumber)
             .putString("audio_language", detectedLang.name)
             .putLong("ep_last_seen_$episodeNumber", System.currentTimeMillis())
@@ -106,7 +124,17 @@ class PlaybackPreferences(private val context: Context) {
         return prefs.getLong("ep_last_seen_$episodeNumber", 0L)
     }
 
-    fun getLastUrl(): String? = prefs.getString("last_url", null)
+    fun getLastUrl(): String? {
+        val raw = prefs.getString("last_url", null) ?: return null
+        if (raw.contains("onepiecepower.net") || !raw.contains("onepiecepower.com")) {
+            val ep = getLastEpisode()
+            val lang = getAudioLanguage()
+            val cleanUrl = OnePieceHelper.buildEpisodeUrl("", ep, lang)
+            prefs.edit().putString("last_url", cleanUrl).apply()
+            return cleanUrl
+        }
+        return raw
+    }
     fun getLastEpisode(): Int = prefs.getInt("last_episode", 543)
     fun getLastPositionMs(): Long = prefs.getLong("last_position_ms", 0L)
     fun getEpisodePositionMs(episodeNumber: Int): Long = prefs.getLong("ep_pos_$episodeNumber", 0L)

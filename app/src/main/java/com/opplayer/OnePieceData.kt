@@ -151,9 +151,14 @@ object OnePieceHelper {
     }
 
     fun extractEpisodeNumber(url: String): Int {
-        val regex = Regex("""pagine/(\d+)""")
-        val match = regex.find(url)
-        return match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        val regexPagine = Regex("""pagine/(\d+)""")
+        regexPagine.find(url)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+
+        val regexEp = Regex("""(?:episodio[^\d]*|ep[^\d]*)(\d+)""", RegexOption.IGNORE_CASE)
+        regexEp.find(url)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+
+        val anyDigits = Regex("""(\d+)""").findAll(url).mapNotNull { it.value.toIntOrNull() }.filter { it in 1..TOTAL_AIRING_EPISODES }.lastOrNull()
+        return anyDigits ?: 543
     }
 
     fun detectLanguage(url: String): AudioLanguage {
@@ -165,37 +170,21 @@ object OnePieceHelper {
         targetEpisode: Int,
         language: AudioLanguage? = null
     ): String {
-        var targetLang = language ?: detectLanguage(currentActiveUrl)
+        var targetLang = language ?: if (currentActiveUrl.isNotBlank()) detectLanguage(currentActiveUrl) else AudioLanguage.ITA
         // Se l'episodio richiesto supera quelli attualmente doppiati in italiano,
         // reindirizza automaticamente ai sottotitoli in italiano per evitare errori 404
         if (targetLang == AudioLanguage.ITA && targetEpisode > LAST_KNOWN_ITA_DUBBED_EPISODE) {
             targetLang = AudioLanguage.SUB_ITA
         }
         val segment = targetLang.pathSegment
-
-        val regex = Regex("""pagine/(\d+)""")
-        val match = regex.find(currentActiveUrl)
-        val len = match?.groupValues?.get(1)?.length ?: 3
-        val padLen = maxOf(len, if (targetEpisode >= 1000) 4 else 3)
+        val padLen = if (targetEpisode >= 1000) 4 else 3
         val formatted = targetEpisode.toString().padStart(padLen, '0')
-
-        if (currentActiveUrl.contains("onepiecepower.com")) {
-            val replacedLang = currentActiveUrl.replace(
-                Regex("""anime18/onepiece/(ita\d*|subita\d*)"""),
-                "anime18/onepiece/$segment"
-            )
-            return if (regex.containsMatchIn(replacedLang)) {
-                replacedLang.replace(regex, "pagine/$formatted")
-            } else {
-                "https://onepiecepower.com/anime18/onepiece/$segment/pagine/$formatted"
-            }
-        }
         return "https://onepiecepower.com/anime18/onepiece/$segment/pagine/$formatted"
     }
 
     fun switchLanguageInUrl(currentUrl: String, newLanguage: AudioLanguage): String {
         val ep = extractEpisodeNumber(currentUrl)
-        return buildEpisodeUrl(currentUrl, ep, newLanguage)
+        return buildEpisodeUrl("", ep, newLanguage)
     }
 
     fun getEpisodeListUrl(language: AudioLanguage): String = language.episodeListUrl
