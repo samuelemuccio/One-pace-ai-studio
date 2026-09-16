@@ -148,24 +148,10 @@ fun VideoPlayerScreen(
 
     DisposableEffect(Unit) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        // Tetto a 60 Hz per il player: quando tieni premuto a lungo (boost 3x) o skippi di frequente,
-        // il display LTPO dell'S25 Ultra non schizza inutilmente a 120 Hz, risparmiando preziosa batteria.
-        val window = activity?.window
-        val prevRefreshRate = window?.attributes?.preferredRefreshRate ?: 0f
-        window?.let { w ->
-            val params = w.attributes
-            params.preferredRefreshRate = 60f
-            w.attributes = params
-        }
         onDispose {
             prefs.saveSpeed(playbackSpeed)
             prefs.saveSkipStep(skipIntervalSeconds)
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            window?.let { w ->
-                val params = w.attributes
-                params.preferredRefreshRate = prevRefreshRate
-                w.attributes = params
-            }
         }
     }
 
@@ -178,6 +164,7 @@ fun VideoPlayerScreen(
 
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
+            .setVideoChangeFrameRateStrategy(androidx.media3.common.C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
             .build().apply {
                 playbackParameters = PlaybackParameters(playbackSpeed)
             }

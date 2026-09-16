@@ -318,16 +318,7 @@ private fun HeroEpisodeCard(
 ) {
     val palette = remember(saga.name) { SagaPalette.forSaga(saga.name) }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "dotPulse")
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotAlpha"
-    )
+    val dotAlpha = 1.0f
 
     val isCompleting = isWatched
     val isInProgress = savedPosition > 10_000L
@@ -603,26 +594,6 @@ fun MinimalStreakBadge(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "minimalStreak")
-    val flameScale by infiniteTransition.animateFloat(
-        initialValue = 0.90f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(750, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "flameScale"
-    )
-    val flameRotation by infiniteTransition.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "flameRotation"
-    )
-
     Surface(
         shape = AppShape.Pill,
         color = Color(0x24FF4500),
@@ -645,13 +616,7 @@ fun MinimalStreakBadge(
                 imageVector = Icons.Default.LocalFireDepartment,
                 contentDescription = "Streak $streak giorni",
                 tint = Color(0xFFFF5722),
-                modifier = Modifier
-                    .size(17.dp)
-                    .graphicsLayer {
-                        scaleX = flameScale
-                        scaleY = flameScale
-                        rotationZ = flameRotation
-                    }
+                modifier = Modifier.size(17.dp)
             )
             Spacer(Modifier.width(4.dp))
             Text(

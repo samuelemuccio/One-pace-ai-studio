@@ -130,26 +130,6 @@ fun AnimatedStreakBadge(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "streakFlame")
-    val flameScale by infiniteTransition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1.18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(650, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "flameScale"
-    )
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(650, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
-
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = Color(0x33FF3B30),
@@ -157,8 +137,8 @@ fun AnimatedStreakBadge(
             1.dp,
             Brush.horizontalGradient(
                 listOf(
-                    Color(0xFFFF3B30).copy(alpha = glowAlpha),
-                    Color(0xFFFF9500).copy(alpha = glowAlpha)
+                    Color(0xFFFF3B30).copy(alpha = 0.85f),
+                    Color(0xFFFF9500).copy(alpha = 0.85f)
                 )
             )
         ),
@@ -172,12 +152,7 @@ fun AnimatedStreakBadge(
                 imageVector = Icons.Default.LocalFireDepartment,
                 contentDescription = "Streak attiva",
                 tint = Color(0xFFFF3B30),
-                modifier = Modifier
-                    .size(16.dp)
-                    .graphicsLayer {
-                        scaleX = flameScale
-                        scaleY = flameScale
-                    }
+                modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
@@ -260,16 +235,7 @@ fun LogPoseCompassIcon(
     modifier: Modifier = Modifier,
     iconSize: Dp = 24.dp
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "logPoseNeedle")
-    val needleAngle by infiniteTransition.animateFloat(
-        initialValue = -7f,
-        targetValue = 7f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "needleOscillation"
-    )
+    val needleAngle = if (isSelected) -4f else 0f
 
     Box(
         modifier = modifier.size(iconSize),
