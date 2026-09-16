@@ -18,8 +18,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -707,18 +709,19 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // BOTTOM BAR: Scrubber Slider + Clean Controls (no manual 10s buttons, only anime skips and next ep)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f))
+                // BOTTOM BAR: Scrubber Slider + Clean Controls (nascosta se il pannello impostazioni è aperto per evitare accavallamenti)
+                if (!showSettingsPanel) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f))
+                                )
                             )
-                        )
-                        .padding(horizontal = 24.dp, vertical = 14.dp)
-                ) {
+                            .padding(horizontal = 24.dp, vertical = 14.dp)
+                    ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         // Scrubber Slider
                         Row(
@@ -951,8 +954,29 @@ fun VideoPlayerScreen(
                 }
             }
         }
+        }
 
-        // FROSTED GLASS SETTINGS PANEL WITH CONTINUOUS SPEED SLIDER
+        // SCRIM BACKDROP: chiude il pannello toccando all'esterno
+        AnimatedVisibility(
+            visible = showSettingsPanel,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(180)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.50f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showSettingsPanel = false
+                    }
+            )
+        }
+
+        // COMPACT FROSTED GLASS SETTINGS PANEL WITH SMOOTH VERTICAL SCROLL
         AnimatedVisibility(
             visible = showSettingsPanel,
             enter = slideInHorizontally(
@@ -968,56 +992,64 @@ fun VideoPlayerScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(330.dp),
-                color = Color(0xF514141E),
+                    .width(340.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* Consuma i click per non cliccare il player sottostante */ },
+                color = Color(0xFF13131C), // 100% opaco: nessun elemento sotto traspare
                 border = BorderStroke(1.dp, specularBorder),
-                shadowElevation = 20.dp
+                shadowElevation = 24.dp
             ) {
+                val settingsScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp)
+                        .verticalScroll(settingsScrollState)
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
                 ) {
+                    // Header con X di chiusura
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Tune, contentDescription = null, tint = accentRed, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = accentRed, modifier = Modifier.size(19.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Impostazioni Cinema", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                            Text("Impostazioni Cinema", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
-                        IconButton(onClick = { showSettingsPanel = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.Gray)
+                        IconButton(
+                            onClick = { showSettingsPanel = false },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Chiudi", tint = Color.LightGray, modifier = Modifier.size(20.dp))
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Playback Speed with Slider
+                    // 1. Velocità Riproduzione
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Velocità Riproduzione", color = Color.LightGray, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Velocità Riproduzione", color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = accentRed.copy(alpha = 0.20f),
                             border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f))
                         ) {
                             Text(
-                                text = String.format("%.2fx", playbackSpeed),
+                                text = String.format(Locale.US, "%.2fx", playbackSpeed),
                                 color = Color.White,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(6.dp))
 
                     Slider(
                         value = playbackSpeed,
@@ -1036,15 +1068,15 @@ fun VideoPlayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Quick speed presets
+                    // Quick speed presets compatti
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { sp ->
                             val isSel = kotlin.math.abs(playbackSpeed - sp) < 0.04f
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(7.dp),
                                 color = if (isSel) accentRed else Color.White.copy(alpha = 0.08f),
                                 border = BorderStroke(1.dp, if (isSel) accentRed else Color.White.copy(alpha = 0.15f)),
                                 modifier = Modifier
@@ -1055,7 +1087,7 @@ fun VideoPlayerScreen(
                                         prefs.saveSpeed(sp)
                                     }
                             ) {
-                                Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                                Box(modifier = Modifier.padding(vertical = 5.dp), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = "${sp}x",
                                         color = Color.White,
@@ -1067,93 +1099,121 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Text("Traccia Audio & Sottotitoli", color = Color.LightGray, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // 2. Scelta Lingua in stile SWITCH COMPATTO (Segmented Switch a due stati)
+                    Text("Traccia Audio & Sottotitoli", color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val isItaDubbed = OnePieceHelper.isDubbedInItalian(episodeNumber)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
                     ) {
-                        val isItaDubbed = OnePieceHelper.isDubbedInItalian(episodeNumber)
-                        listOf(AudioLanguage.ITA, AudioLanguage.SUB_ITA).forEach { lang ->
-                            val isSel = lang == audioLanguage
-                            val isAvailable = lang != AudioLanguage.ITA || isItaDubbed
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSel) accentRed.copy(alpha = 0.85f) else Color.White.copy(alpha = if (isAvailable) 0.08f else 0.04f),
-                                border = BorderStroke(1.dp, if (isSel) Color.White.copy(alpha = 0.50f) else Color.White.copy(alpha = if (isAvailable) 0.15f else 0.06f)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .iosSpringPress {
-                                        if (lang != audioLanguage) {
-                                            if (lang == AudioLanguage.ITA && !isItaDubbed) {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Ep. $episodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                            } else {
-                                                val currentPos = exoPlayer.currentPosition
-                                                onLanguageChanged(lang, currentPos)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf(AudioLanguage.ITA, AudioLanguage.SUB_ITA).forEach { lang ->
+                                val isSel = lang == audioLanguage
+                                val isAvailable = lang != AudioLanguage.ITA || isItaDubbed
+                                Surface(
+                                    shape = RoundedCornerShape(7.dp),
+                                    color = if (isSel) accentRed else Color.Transparent,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .iosSpringPress {
+                                            if (lang != audioLanguage) {
+                                                if (lang == AudioLanguage.ITA && !isItaDubbed) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Ep. $episodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                } else {
+                                                    val currentPos = exoPlayer.currentPosition
+                                                    onLanguageChanged(lang, currentPos)
+                                                }
                                             }
                                         }
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(lang.flag, fontSize = 14.sp)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        if (lang == AudioLanguage.ITA && !isItaDubbed) "ITA (Inedito)" else lang.shortLabel,
-                                        color = if (isAvailable) Color.White else Color.White.copy(alpha = 0.45f),
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text("Intervallo Doppio Tocco", color = Color.LightGray, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(3, 5, 10, 15, 30).forEach { sec ->
-                            val isSelected = skipIntervalSeconds == sec
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) accentRed else Color.White.copy(alpha = 0.08f),
-                                border = BorderStroke(1.dp, if (isSelected) accentRed else Color.White.copy(alpha = 0.15f)),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .iosSpringPress {
-                                        skipIntervalSeconds = sec
-                                        prefs.saveSkipStep(sec)
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(lang.flag, fontSize = 13.sp)
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(
+                                            text = if (lang == AudioLanguage.ITA && !isItaDubbed) "ITA (Inedito)" else lang.shortLabel,
+                                            color = if (isSel) Color.White else if (isAvailable) Color.LightGray else Color.Gray,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 11.sp
+                                        )
                                     }
-                            ) {
-                                Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "${sec}s",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // === BOOST VELOCITÀ (long-press metà destra) ===
+                    // 3. Intervallo Doppio Tocco (Segmented Switch a 5 valori)
+                    Text("Intervallo Doppio Tocco", color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            listOf(3, 5, 10, 15, 30).forEach { sec ->
+                                val isSelected = skipIntervalSeconds == sec
+                                Surface(
+                                    shape = RoundedCornerShape(7.dp),
+                                    color = if (isSelected) accentRed else Color.Transparent,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .iosSpringPress {
+                                            skipIntervalSeconds = sec
+                                            prefs.saveSkipStep(sec)
+                                        }
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${sec}s",
+                                            color = if (isSelected) Color.White else Color.LightGray,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 4. Boost Velocità (long-press metà destra)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1162,25 +1222,23 @@ fun VideoPlayerScreen(
                         Text(
                             "Boost Long-Press (metà dx)",
                             color = Color.LightGray,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = accentRed.copy(alpha = 0.20f),
                             border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f))
                         ) {
                             Text(
-                                text = String.format("%.1fx", boostSpeed),
+                                text = String.format(Locale.US, "%.1fx", boostSpeed),
                                 color = Color.White,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(6.dp))
 
                     Slider(
                         value = boostSpeed,
@@ -1200,16 +1258,14 @@ fun VideoPlayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         listOf(1.5f, 2.0f, 2.5f, 3.0f, 4.0f).forEach { sp ->
                             val isSel = kotlin.math.abs(boostSpeed - sp) < 0.05f
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(7.dp),
                                 color = if (isSel) accentRed else Color.White.copy(alpha = 0.08f),
                                 border = BorderStroke(1.dp, if (isSel) accentRed else Color.White.copy(alpha = 0.15f)),
                                 modifier = Modifier
@@ -1219,7 +1275,7 @@ fun VideoPlayerScreen(
                                         prefs.setBoostSpeed(sp)
                                     }
                             ) {
-                                Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                                Box(modifier = Modifier.padding(vertical = 5.dp), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = "${sp}x",
                                         color = Color.White,
@@ -1231,29 +1287,29 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // === TIMESTAMP MEDIASET & AUTO-LEARNING ===
+                    // 5. Timestamp Sigla Mediaset
                     Text(
                         "Timestamp Sigla Mediaset",
                         color = Color.LightGray,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Attuale fine sigla: ${formatTime(currentOpeningEnd)}",
                         color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = accentRed.copy(alpha = 0.20f),
                             border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f)),
                             modifier = Modifier
@@ -1270,7 +1326,7 @@ fun VideoPlayerScreen(
                                 }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
@@ -1278,11 +1334,11 @@ fun VideoPlayerScreen(
                                     Icons.Default.BookmarkBorder,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "📌 Segna qui fine sigla",
+                                    text = "📌 Segna fine sigla",
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -1291,7 +1347,7 @@ fun VideoPlayerScreen(
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = Color.White.copy(alpha = 0.08f),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                             modifier = Modifier
@@ -1308,7 +1364,7 @@ fun VideoPlayerScreen(
                                 }
                         ) {
                             Box(
-                                modifier = Modifier.padding(vertical = 8.dp),
+                                modifier = Modifier.padding(vertical = 7.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -1320,6 +1376,9 @@ fun VideoPlayerScreen(
                             }
                         }
                     }
+
+                    // Extra spazio inferiore per uno scroll confortevole
+                    Spacer(modifier = Modifier.height(28.dp))
                 }
             }
         }
