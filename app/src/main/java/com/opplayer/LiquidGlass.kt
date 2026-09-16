@@ -118,14 +118,14 @@ private object AgslGlassShaderHolder {
             float dist = length(p) / max(1.0, dropletHalfSize.y);
 
             if (dist < 1.0) {
-                // Lente convessa ottica sferica: ingrandimento e rifrazione reale
+                // Lente convessa ottica delicata: ingrandimento sottile e naturale senza deformare troppo l'icona
                 float z = sqrt(max(0.0, 1.0 - dist * dist));
                 float factor = (1.0 - z * curvature) / zoom;
                 float2 sampleOffset = d * (factor - 1.0);
                 float2 sampleCoord = coord + sampleOffset;
 
-                // Aberrazione cromatica prismatica ai bordi della lente
-                float chroma = dist * dist * 2.8;
+                // Aberrazione cromatica prismatica delicata ai bordi della lente
+                float chroma = dist * dist * 1.3;
                 float2 chromaDir = (dist > 0.001) ? normalize(p) * chroma : float2(0.0);
 
                 half4 colR = content.eval(sampleCoord + chromaDir);
@@ -133,18 +133,18 @@ private object AgslGlassShaderHolder {
                 half4 colB = content.eval(sampleCoord - chromaDir);
                 half4 col = half4(colR.r, colG.g, colB.b, colG.a);
 
-                // Menisco scuro di riflessione interna ai bordi (dist tra 0.72 e 0.95, effetto lente liquido)
-                float meniscus = smoothstep(0.70, 0.92, dist) * (1.0 - smoothstep(0.95, 1.0, dist));
-                col.rgb = mix(col.rgb, half3(0.08, 0.0, 0.02), meniscus * 0.40);
+                // Menisco scuro di riflessione interna ai bordi (effetto lente liquido naturale)
+                float meniscus = smoothstep(0.75, 0.94, dist) * (1.0 - smoothstep(0.96, 1.0, dist));
+                col.rgb = mix(col.rgb, half3(0.08, 0.0, 0.02), meniscus * 0.30);
 
                 // Tinta trasparente rosso rubino liquido (acqua colorata, limpida e brillante)
                 half3 rubyTint = half3(0.95, 0.06, 0.12);
-                col.rgb = mix(col.rgb, rubyTint, 0.26);
+                col.rgb = mix(col.rgb, rubyTint, 0.22);
 
                 // Glare speculare superiore a calotta convessa e caustica inferiore
                 float normY = (coord.y - (dropletCenter.y - dropletHalfSize.y)) / max(1.0, 2.0 * dropletHalfSize.y);
-                float topGlare = smoothstep(0.35, 0.05, normY) * (1.0 - smoothstep(0.85, 1.0, dist)) * 0.32;
-                float bottomCaustic = smoothstep(0.65, 0.95, normY) * (1.0 - smoothstep(0.88, 0.98, dist)) * 0.18;
+                float topGlare = smoothstep(0.35, 0.05, normY) * (1.0 - smoothstep(0.85, 1.0, dist)) * 0.25;
+                float bottomCaustic = smoothstep(0.65, 0.95, normY) * (1.0 - smoothstep(0.88, 0.98, dist)) * 0.14;
 
                 col.rgb += half3(topGlare + bottomCaustic);
                 return col;
@@ -154,7 +154,7 @@ private object AgslGlassShaderHolder {
         }
     """
 
-    fun createConvexLensShader(w: Float, h: Float, zoom: Float = 1.25f, curvature: Float = 0.40f): RuntimeShader {
+    fun createConvexLensShader(w: Float, h: Float, zoom: Float = 1.15f, curvature: Float = 0.25f): RuntimeShader {
         val shader = RuntimeShader(AGSL_CONVEX_LENS_SRC)
         shader.setFloatUniform("size", w.coerceAtLeast(1f), h.coerceAtLeast(1f))
         shader.setFloatUniform("zoom", zoom)
@@ -176,8 +176,8 @@ private object AgslGlassShaderHolder {
         centerY: Float,
         halfW: Float,
         halfH: Float,
-        zoom: Float = 1.30f,
-        curvature: Float = 0.40f
+        zoom: Float = 1.06f,
+        curvature: Float = 0.12f
     ): RuntimeShader {
         val shader = RuntimeShader(AGSL_DROPLET_CAPSULE_SRC)
         shader.setFloatUniform("size", w.coerceAtLeast(1f), h.coerceAtLeast(1f))
@@ -259,8 +259,8 @@ fun Modifier.opticalDropletDistortion(
     centerY: Float,
     halfWidth: Float,
     halfHeight: Float,
-    zoom: Float = 1.30f,
-    curvature: Float = 0.40f
+    zoom: Float = 1.06f,
+    curvature: Float = 0.12f
 ): Modifier {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         return this.graphicsLayer {

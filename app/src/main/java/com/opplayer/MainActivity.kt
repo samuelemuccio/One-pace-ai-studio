@@ -627,7 +627,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val savedEpisode = remember { prefs.getLastEpisode() }
-                val defaultStartUrl = OnePieceHelper.buildEpisodeUrl("", savedEpisode)
+                var currentAudioLanguage by remember { mutableStateOf(prefs.getAudioLanguage()) }
+                val defaultStartUrl = OnePieceHelper.buildEpisodeUrl("", savedEpisode, currentAudioLanguage)
                 val savedUrl = remember { prefs.getLastUrl() ?: defaultStartUrl }
                 // Reattivo: si aggiorna in tempo reale quando il player salva
                 var savedPosition by remember { mutableLongStateOf(prefs.getLastPositionMs()) }
@@ -643,6 +644,8 @@ class MainActivity : ComponentActivity() {
                 var isResolvingStream by remember { mutableStateOf(false) }
                 var resolvingEpisodeNumber by remember { mutableIntStateOf(savedEpisode) }
                 var isPlayerAdvancingNext by remember { mutableStateOf(false) }
+                var isPlayerSwitchingLanguage by remember { mutableStateOf(false) }
+                var lastPersistedPositionMs by remember { mutableLongStateOf(0L) }
 
                 var currentTab by remember { mutableIntStateOf(0) }
                 var isBrowserOpen by remember { mutableStateOf(false) }
@@ -805,12 +808,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // UNIFIED ROBUST STREAM LAUNCHER
-                fun playEpisode(targetEp: Int, fromPos: Long = -1L) {
+                fun playEpisode(targetEp: Int, fromPos: Long = -1L, language: AudioLanguage? = null) {
+                    if (language != null) {
+                        currentAudioLanguage = language
+                        prefs.setAudioLanguage(language)
+                    }
+                    val targetLang = language ?: currentAudioLanguage
                     currentEpisodeNumber = targetEp
                     val effectivePos = if (fromPos >= 0L) fromPos else prefs.getEpisodePositionMs(targetEp)
                     startFromPosition = effectivePos
                     savedPosition = effectivePos
-                    val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, targetEp)
+                    val epUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, targetEp, targetLang)
                     currentWebUrl = epUrl
 
                     // Avvia tracking della sessione per statistiche
@@ -823,17 +831,20 @@ class MainActivity : ComponentActivity() {
                     val localFile = downloadedList.firstOrNull { it.episodeNumber == targetEp }
                     if (localFile != null && localFile.file.exists()) {
                         activeVideoUrl = localFile.file.absolutePath
-                        prefs.saveLastPlayback(localFile.file.absolutePath, targetEp, effectivePos)
+                        prefs.saveLastPlayback(localFile.file.absolutePath, targetEp, effectivePos, targetLang)
                         Toast.makeText(this@MainActivity, "Avvio da memoria locale 💾", Toast.LENGTH_SHORT).show()
                         return
                     }
 
-                    // 2. Se detectedVideoUrl corrisponde già all'episodio
-                    if (detectedVideoUrl != null && isValidVideoStream(detectedVideoUrl!!) && currentWebUrl.contains("pagine/$targetEp")) {
+                    // 2. Se detectedVideoUrl corrisponde già all'episodio con stessa lingua richiesta
+                    if (language == null && detectedVideoUrl != null && isValidVideoStream(detectedVideoUrl!!) && currentWebUrl.contains("pagine/$targetEp")) {
                         activeVideoUrl = detectedVideoUrl
-                        prefs.saveLastPlayback(epUrl, targetEp, effectivePos)
+                        prefs.saveLastPlayback(epUrl, targetEp, effectivePos, targetLang)
                         return
                     }
+
+                    // Resetta per nuova risoluzione stream se stiamo cambiando lingua o episodio
+                    detectedVideoUrl = null
 
                     // 3. Risoluzione rapida in parallelo: sia StreamExtractor che WebView!
                     isResolvingStream = true
@@ -851,7 +862,7 @@ class MainActivity : ComponentActivity() {
                                     activeVideoUrl = directStream
                                     isResolvingStream = false
                                     isAutoAdvancing = false
-                                    prefs.saveLastPlayback(epUrl, targetEp, effectivePos)
+                                    prefs.saveLastPlayback(epUrl, targetEp, effectivePos, targetLang)
                                 }
                                 return@launch
                             }
@@ -1038,6 +1049,17 @@ class MainActivity : ComponentActivity() {
                                         favoriteEpisodes = favoriteEpisodes,
                                         dailyStreak = dailyStreak,
                                         savedPosition = savedPosition,
+                                        audioLanguage = currentAudioLanguage,
+                                        onLanguageChanged = { newLang ->
+                                            currentAudioLanguage = newLang
+                                            prefs.setAudioLanguage(newLang)
+                                            currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber, newLang)
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                "Traccia impostata: ${newLang.label}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
                                         onPlay = { ep, pos -> playEpisode(ep, pos) },
                                         onEpisodeSelected = { ep ->
                                             currentEpisodeNumber = ep
@@ -1106,10 +1128,11 @@ class MainActivity : ComponentActivity() {
                                         prefs = prefs,
                                         currentEpisodeNumber = currentEpisodeNumber,
                                         watchedEpisodes = watchedEpisodes,
+                                        audioLanguage = currentAudioLanguage,
                                         onPlayOfflineEpisode = { filePath, epNum ->
                                             activeVideoUrl = filePath
                                             currentEpisodeNumber = epNum
-                                            currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, epNum)
+                                            currentWebUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, epNum, currentAudioLanguage)
                                         },
                                         onOpenSettings = { showSettingsDialog = true }
                                     )
@@ -1432,17 +1455,17 @@ class MainActivity : ComponentActivity() {
                                                         centerY = dropletCenterY,
                                                         halfWidth = dropletHalfW,
                                                         halfHeight = dropletHalfH,
-                                                        zoom = 1.30f,
-                                                        curvature = 0.42f
+                                                        zoom = 1.06f,
+                                                        curvature = 0.12f
                                                     ),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 items.forEach { item ->
                                                     val isSelected = currentTab == item.tabIndex
                                                     val iconScale by animateFloatAsState(
-                                                        targetValue = if (isSelected) 1.25f else 0.95f,
+                                                        targetValue = if (isSelected) 1.05f else 0.94f,
                                                         animationSpec = spring(
-                                                            dampingRatio = 0.55f,
+                                                            dampingRatio = 0.65f,
                                                             stiffness = 320f
                                                         ),
                                                         label = "navIconScale"
@@ -2309,9 +2332,11 @@ class MainActivity : ComponentActivity() {
                             VideoPlayerScreen(
                                 videoUrl = videoUrl,
                                 currentWebUrl = currentWebUrl,
+                                audioLanguage = currentAudioLanguage,
                                 initialPositionMs = startFromPosition,
                                 isInPipMode = isInPipModeState.value,
                                 isAdvancingNext = isPlayerAdvancingNext,
+                                isSwitchingLanguage = isPlayerSwitchingLanguage,
                                 onEnterPip = { enterPipMode(isPlaying = true) },
                                 onDownloadRequested = { url, ep ->
                                     downloadEpisodeOffline(url, ep)
@@ -2334,9 +2359,9 @@ class MainActivity : ComponentActivity() {
                                     if (nextEp <= OnePieceHelper.TOTAL_AIRING_EPISODES) {
                                         // FIX: azzera la posizione dell'episodio che stiamo per lasciare
                                         // così non rimane "in sospeso" con l'ultima posizione.
-                                        prefs.saveLastPlayback(currentWebUrl, currentEpisodeNumber, 0L)
+                                        prefs.saveLastPlayback(currentWebUrl, currentEpisodeNumber, 0L, currentAudioLanguage)
 
-                                        val nextUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, nextEp)
+                                        val nextUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, nextEp, currentAudioLanguage)
                                         currentEpisodeNumber = nextEp
                                         currentWebUrl = nextUrl
                                         startFromPosition = 0L
@@ -2352,14 +2377,55 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onPositionChanged = { pos ->
-                                    // FIX race condition: durante il cambio episodio il player
-                                    // può emettere un ultimo onPositionChanged riferito al
-                                    // vecchio episodio, ma currentWebUrl è già aggiornato
-                                    // al nuovo. Ignoriamo quell'ultimo tick.
                                     if (!isPlayerAdvancingNext) {
-                                        val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
-                                        prefs.saveLastPlayback(currentWebUrl, ep, pos)
                                         savedPosition = pos
+                                        if (kotlin.math.abs(pos - lastPersistedPositionMs) >= 5_000L) {
+                                            lastPersistedPositionMs = pos
+                                            val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
+                                            prefs.saveLastPlayback(currentWebUrl, ep, pos, currentAudioLanguage)
+                                        }
+                                    }
+                                },
+                                onLanguageChanged = { newLang, currentPos ->
+                                    if (newLang == AudioLanguage.ITA && !OnePieceHelper.isDubbedInItalian(currentEpisodeNumber)) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Episodio $currentEpisodeNumber disponibile solo in SUB-ITA 🇯🇵 (non ancora doppiato in ITA)",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        currentAudioLanguage = newLang
+                                        prefs.setAudioLanguage(newLang)
+                                        isPlayerSwitchingLanguage = true
+                                        savedPosition = currentPos
+                                        startFromPosition = currentPos
+                                        val newEpUrl = OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber, newLang)
+                                        currentWebUrl = newEpUrl
+                                        prefs.saveLastPlayback(newEpUrl, currentEpisodeNumber, currentPos, newLang)
+
+                                        lifecycleScope.launch(Dispatchers.IO) {
+                                            try {
+                                                val directStream = StreamExtractor.resolveStreamUrl(newEpUrl)
+                                                withContext(Dispatchers.Main) {
+                                                    if (!directStream.isNullOrBlank()) {
+                                                        activeVideoUrl = directStream
+                                                        startFromPosition = currentPos
+                                                    } else {
+                                                        webViewInstance?.loadUrl(newEpUrl)
+                                                    }
+                                                    isPlayerSwitchingLanguage = false
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        "Traccia: ${newLang.label}",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            } catch (e: Exception) {
+                                                withContext(Dispatchers.Main) {
+                                                    isPlayerSwitchingLanguage = false
+                                                }
+                                            }
+                                        }
                                     }
                                 },
                                 onClose = {
@@ -2373,10 +2439,14 @@ class MainActivity : ComponentActivity() {
                                     // non va applicata al nuovo.
                                     if (isPlayerAdvancingNext) {
                                         prefs.saveLastPlayback(
-                                            OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber),
+                                            OnePieceHelper.buildEpisodeUrl(currentWebUrl, currentEpisodeNumber, currentAudioLanguage),
                                             currentEpisodeNumber,
-                                            0L
+                                            0L,
+                                            currentAudioLanguage
                                         )
+                                    } else {
+                                        val ep = OnePieceHelper.extractEpisodeNumber(currentWebUrl)
+                                        prefs.saveLastPlayback(currentWebUrl, ep, savedPosition, currentAudioLanguage)
                                     }
                                     // Sincronizza lo stato della Home con l'ultimo salvataggio
                                     savedPosition = prefs.getLastPositionMs()

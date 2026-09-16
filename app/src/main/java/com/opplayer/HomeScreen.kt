@@ -1,17 +1,22 @@
 package com.opplayer
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,6 +60,8 @@ fun HomeScreen(
     favoriteEpisodes: Set<Int>,
     dailyStreak: Int,
     savedPosition: Long,
+    audioLanguage: AudioLanguage = AudioLanguage.ITA,
+    onLanguageChanged: (AudioLanguage) -> Unit = {},
     onPlay: (Int, Long) -> Unit,
     onEpisodeSelected: (Int) -> Unit = {},
     onToggleWatched: (Int) -> Unit = {},
@@ -123,22 +130,25 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "ONE PIECE",
-                            style = AppType.Caption.copy(color = AppColors.Accent),
-                            letterSpacing = 2.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        Text(
-                            "Rotta Maggiore",
-                            style = AppType.Title.copy(color = AppColors.TextPrimary)
-                        )
-                    }
+                    Text(
+                        "ONE PIECE",
+                        style = AppType.Title.copy(
+                            color = AppColors.TextPrimary,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        CompactLanguageCapsule(
+                            selectedLanguage = audioLanguage,
+                            onLanguageChanged = onLanguageChanged
+                        )
                         MinimalStreakBadge(
                             streak = dailyStreak,
                             onClick = onOpenStreak
@@ -158,9 +168,12 @@ fun HomeScreen(
                     savedPosition = selectedSavedPosition,
                     isWatched = isWatched,
                     isFavorite = isFav,
+                    audioLanguage = audioLanguage,
+                    onToggleLanguage = { onLanguageChanged(audioLanguage.opposite) },
                     remainingInSaga = selectedSaga.range.last - selectedEpisode,
                     onPlay = { onPlay(selectedEpisode, selectedSavedPosition) },
-                    onToggleFavorite = { onToggleFavorite(selectedEpisode) }
+                    onToggleFavorite = { onToggleFavorite(selectedEpisode) },
+                    onToggleWatched = { onToggleWatched(selectedEpisode) }
                 )
             }
 
@@ -296,9 +309,12 @@ private fun HeroEpisodeCard(
     savedPosition: Long,
     isWatched: Boolean,
     isFavorite: Boolean,
+    audioLanguage: AudioLanguage = AudioLanguage.ITA,
+    onToggleLanguage: () -> Unit = {},
     remainingInSaga: Int,
     onPlay: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onToggleWatched: () -> Unit = {}
 ) {
     val palette = remember(saga.name) { SagaPalette.forSaga(saga.name) }
 
@@ -408,26 +424,42 @@ private fun HeroEpisodeCard(
             ) {
                 Surface(
                     shape = AppShape.Chip,
-                    color = Color.White.copy(alpha = 0.12f)
+                    color = if (isWatched) Color(0x334CAF50) else Color.White.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, if (isWatched) Color(0x8081C784) else Color.White.copy(alpha = 0.20f)),
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleWatched
+                    )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isInProgress) AppColors.Success.copy(alpha = dotAlpha)
-                                    else badgeColor
-                                )
-                        )
-                        Spacer(Modifier.width(6.dp))
+                        if (isWatched) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = "Completato - Tocca per deselezionare",
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isInProgress) AppColors.Success.copy(alpha = dotAlpha)
+                                        else badgeColor
+                                    )
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
                         Text(
                             badgeText,
                             style = AppType.Caption.copy(
-                                color = Color.White,
+                                color = if (isWatched) Color(0xFFC8E6C9) else Color.White,
                                 fontWeight = FontWeight.Bold
                             ),
                             letterSpacing = 1.sp
@@ -449,6 +481,37 @@ private fun HeroEpisodeCard(
                         ),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                val isItaDubbed = OnePieceHelper.isDubbedInItalian(episodeNumber)
+                val effectiveLang = if (audioLanguage == AudioLanguage.ITA && !isItaDubbed) AudioLanguage.SUB_ITA else audioLanguage
+
+                Surface(
+                    shape = AppShape.Chip,
+                    color = Color(0x35FF2A42),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleLanguage
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(effectiveLang.flag, fontSize = 11.sp)
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (audioLanguage == AudioLanguage.ITA && !isItaDubbed) "SUB-ITA (Inedito ITA)" else effectiveLang.shortLabel,
+                            style = AppType.Caption.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -1008,14 +1071,16 @@ private fun UpcomingEpisodeRow(
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Checkbox Visto/Non Visto interattivo diretto con singolo tocco
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(AppShape.Small)
-                .background(AppColors.Glass2)
-                .combinedClickable(
-                    onClick = onPlayDirect,
-                    onLongClick = {
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (isWatched) AppColors.Success.copy(alpha = 0.20f) else AppColors.Glass2)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onToggleWatched()
                     }
@@ -1023,9 +1088,9 @@ private fun UpcomingEpisodeRow(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                if (isWatched) Icons.Default.CheckCircle else Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = if (isWatched) AppColors.Success else AppColors.TextPrimary,
+                if (isWatched) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = if (isWatched) "Visto - Tocca per deselezionare" else "Segna come visto",
+                tint = if (isWatched) AppColors.Success else AppColors.TextSecondary,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -1045,6 +1110,7 @@ private fun UpcomingEpisodeRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(Modifier.width(8.dp))
         Surface(
             shape = AppShape.Chip,
             color = Color(type.hexColor).copy(alpha = 0.18f)
@@ -1055,10 +1121,118 @@ private fun UpcomingEpisodeRow(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(AppColors.Accent)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onPlayDirect
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "Riproduci subito",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
 /** Calcola i ms wall-clock della settimana corrente (lun-dom) */
 private fun computeThisWeekMs(tracker: WatchSessionTracker): Long {
     return 0L
+}
+
+/**
+ * Toggle Liquid Glass per la selezione lingua/audio (Italiano vs SUB ITA):
+ * - Capsule squircle con pillola attiva scorrevole animata a molla
+ * - Bandiere e label chiare, zero ambiguità
+ * - Materiale Liquid Glass con riflesso speculare
+ */
+@Composable
+fun CompactLanguageCapsule(
+    selectedLanguage: AudioLanguage,
+    onLanguageChanged: (AudioLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val options = remember { listOf(AudioLanguage.ITA, AudioLanguage.SUB_ITA) }
+    val selectedIndex = options.indexOf(selectedLanguage).coerceAtLeast(0)
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0x1AFFFFFF),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+        modifier = modifier
+            .width(72.dp)
+            .height(34.dp)
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(3.dp)
+        ) {
+            val pillWidth = maxWidth / 2f
+            val pillOffset by animateDpAsState(
+                targetValue = pillWidth * selectedIndex,
+                animationSpec = spring(
+                    dampingRatio = 0.75f,
+                    stiffness = 400f
+                ),
+                label = "capsuleOffset"
+            )
+
+            // Pillola attiva liquida rubino
+            Box(
+                modifier = Modifier
+                    .offset(x = pillOffset)
+                    .width(pillWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0x88FF3B47),
+                                Color(0x55C40018)
+                            )
+                        )
+                    )
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.55f),
+                        RoundedCornerShape(14.dp)
+                    )
+            )
+
+            // Bandiere 🇮🇹 e 🇯🇵
+            Row(modifier = Modifier.fillMaxSize()) {
+                options.forEach { lang ->
+                    val isSelected = lang == selectedLanguage
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                onLanguageChanged(lang)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = lang.flag,
+                            fontSize = if (isSelected) 15.sp else 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

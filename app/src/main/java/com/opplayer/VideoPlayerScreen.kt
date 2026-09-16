@@ -83,14 +83,17 @@ fun Modifier.iosSpringPress(onClick: (() -> Unit)? = null): Modifier = composed 
 fun VideoPlayerScreen(
     videoUrl: String,
     currentWebUrl: String,
+    audioLanguage: AudioLanguage = AudioLanguage.ITA,
     initialPositionMs: Long = 0L,
     isInPipMode: Boolean = false,
     isAdvancingNext: Boolean = false,
+    isSwitchingLanguage: Boolean = false,
     onEnterPip: () -> Unit = {},
     onDownloadRequested: (String, Int) -> Unit,
     onPreviousEpisode: (() -> Unit)? = null,
     onNextEpisode: () -> Unit,
     onPositionChanged: (Long) -> Unit,
+    onLanguageChanged: (AudioLanguage, Long) -> Unit = { _, _ -> },
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -125,6 +128,8 @@ fun VideoPlayerScreen(
     var currentOpeningEnd by remember(episodeNumber) {
         mutableLongStateOf(mediasetTs.openingEndMs)
     }
+    var hasSkippedOpening by remember(episodeNumber) { mutableStateOf(false) }
+    var hasSkippedRecap by remember(episodeNumber) { mutableStateOf(false) }
 
     var currentPos by remember { mutableLongStateOf(0L) }
     var bufferedPos by remember { mutableLongStateOf(0L) }
@@ -143,10 +148,24 @@ fun VideoPlayerScreen(
 
     DisposableEffect(Unit) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Tetto a 60 Hz per il player: quando tieni premuto a lungo (boost 3x) o skippi di frequente,
+        // il display LTPO dell'S25 Ultra non schizza inutilmente a 120 Hz, risparmiando preziosa batteria.
+        val window = activity?.window
+        val prevRefreshRate = window?.attributes?.preferredRefreshRate ?: 0f
+        window?.let { w ->
+            val params = w.attributes
+            params.preferredRefreshRate = 60f
+            w.attributes = params
+        }
         onDispose {
             prefs.saveSpeed(playbackSpeed)
             prefs.saveSkipStep(skipIntervalSeconds)
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            window?.let { w ->
+                val params = w.attributes
+                params.preferredRefreshRate = prevRefreshRate
+                w.attributes = params
+            }
         }
     }
 
@@ -165,12 +184,15 @@ fun VideoPlayerScreen(
     }
 
     LaunchedEffect(videoUrl) {
-        exoPlayer.setMediaItem(MediaItem.fromUri(videoUrl))
-        exoPlayer.prepare()
-        if (initialPositionMs > 0L) {
-            exoPlayer.seekTo(initialPositionMs)
+        if (videoUrl.isNotBlank()) {
+            exoPlayer.setMediaItem(MediaItem.fromUri(videoUrl))
+            exoPlayer.prepare()
+            val targetPos = if (initialPositionMs > 0L) initialPositionMs else currentPos
+            if (targetPos > 0L) {
+                exoPlayer.seekTo(targetPos)
+            }
+            exoPlayer.playWhenReady = true
         }
-        exoPlayer.playWhenReady = true
     }
 
     // Listener nativo Media3 — niente polling. Aggiorna lo stato SOLO quando cambia.
@@ -222,11 +244,10 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Auto-hide skip feedback — RESETTO con contatore di sequenza
-    // per evitare il bug del timer che non si resetta su tap ravvicinati
-    LaunchedEffect(skipFeedbackSeq) {
-        if (skipFeedbackSeq > 0) {
-            delay(800)
+    // Auto-hide skip feedback — garanzia assoluta contro badge bloccati a schermo
+    LaunchedEffect(skipFeedbackText, skipFeedbackSeq) {
+        if (skipFeedbackText != null) {
+            delay(1200)
             skipFeedbackText = null
         }
     }
@@ -364,33 +385,39 @@ fun VideoPlayerScreen(
         )
 
         // DOUBLE-TAP SKIP ANIMATED FEEDBACK BADGE
-        skipFeedbackText?.let { text ->
-            Surface(
-                modifier = Modifier
-                    .align(if (skipFeedbackIsForward) Alignment.CenterEnd else Alignment.CenterStart)
-                    .padding(horizontal = 60.dp),
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.78f),
-                border = BorderStroke(1.dp, specularBorder),
-                shadowElevation = 12.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        AnimatedVisibility(
+            visible = skipFeedbackText != null,
+            enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.85f),
+            exit = fadeOut(tween(250)) + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(if (skipFeedbackIsForward) Alignment.CenterEnd else Alignment.CenterStart)
+                .padding(horizontal = 60.dp)
+        ) {
+            skipFeedbackText?.let { text ->
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.82f),
+                    border = BorderStroke(1.dp, specularBorder),
+                    shadowElevation = 12.dp
                 ) {
-                    Icon(
-                        imageVector = if (skipFeedbackIsForward) Icons.Default.FastForward else Icons.Default.FastRewind,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Text(
-                        text = text,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (skipFeedbackIsForward) Icons.Default.FastForward else Icons.Default.FastRewind,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = text,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
             }
         }
@@ -451,6 +478,55 @@ fun VideoPlayerScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+            }
+        }
+
+        // SMART FLOATING SKIP: Compare unicamente durante l'effettiva sigla quando i controlli sono nascosti.
+        // Appena la sigla termina o viene saltata, scompare istantaneamente senza rimanere a schermo per 5 minuti.
+        val isBeforeOpeningFloating = !hasSkippedOpening && currentOpeningEnd > 0L && currentPos < (currentOpeningEnd - 1_500L)
+        val showFloatingSkip = !showControls && !isInPipMode && isPlaying && isBeforeOpeningFloating
+
+        AnimatedVisibility(
+            visible = showFloatingSkip,
+            enter = fadeIn(tween(200)) + slideInVertically { it / 2 },
+            exit = fadeOut(tween(200)) + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 36.dp, end = 32.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Black.copy(alpha = 0.85f),
+                border = BorderStroke(1.dp, specularBorder),
+                shadowElevation = 12.dp,
+                modifier = Modifier.iosSpringPress {
+                    hasSkippedOpening = true
+                    val target = (currentOpeningEnd + 1_000L).coerceAtMost(if (totalDuration > 0) totalDuration else Long.MAX_VALUE)
+                    exoPlayer.seekTo(target)
+                    currentPos = target
+                    skipFeedbackText = "Sigla Saltata"
+                    skipFeedbackIsForward = true
+                    skipFeedbackSeq++
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.FastForward,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Salta Sigla",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -524,6 +600,42 @@ fun VideoPlayerScreen(
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
+                            }
+
+                            // Interactive Audio & Subtitles Language Toggle
+                            val isItaDubbed = OnePieceHelper.isDubbedInItalian(episodeNumber)
+                            val displayLang = if (audioLanguage == AudioLanguage.ITA && !isItaDubbed) AudioLanguage.SUB_ITA else audioLanguage
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0x35FF2A42),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                                modifier = Modifier.iosSpringPress {
+                                    val nextLang = audioLanguage.opposite
+                                    if (nextLang == AudioLanguage.ITA && !isItaDubbed) {
+                                        Toast.makeText(
+                                            context,
+                                            "Ep. $episodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        val currentPos = exoPlayer.currentPosition
+                                        onLanguageChanged(nextLang, currentPos)
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(displayLang.flag, fontSize = 11.sp)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        if (audioLanguage == AudioLanguage.ITA && !isItaDubbed) "SUB-ITA (Inedito)" else displayLang.shortLabel,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 10.sp
+                                    )
+                                }
                             }
                         }
 
@@ -659,9 +771,14 @@ fun VideoPlayerScreen(
                                         sliderDragPosition = newPos
                                     },
                                     onValueChangeFinished = {
-                                        exoPlayer.seekTo(sliderDragPosition.toLong())
-                                        currentPos = sliderDragPosition.toLong()
+                                        val targetPos = sliderDragPosition.toLong()
+                                        exoPlayer.seekTo(targetPos)
+                                        currentPos = targetPos
                                         isDraggingSlider = false
+                                        if (targetPos < 20_000L) {
+                                            hasSkippedOpening = false
+                                            hasSkippedRecap = false
+                                        }
                                     },
                                     valueRange = 0f..(totalDuration.toFloat().coerceAtLeast(1f)),
                                     modifier = Modifier.fillMaxWidth(),
@@ -717,8 +834,8 @@ fun VideoPlayerScreen(
                             ) {
                                 // Sigla Mediaset (timestamp intelligente da MediasetTimestampProvider)
                                 val hasOpening = currentOpeningEnd > 0L
-                                val isBeforeOpeningEnd = currentPos < currentOpeningEnd
-                                if (hasOpening && isBeforeOpeningEnd) {
+                                val isBeforeOpeningEnd = !hasSkippedOpening && hasOpening && currentPos < (currentOpeningEnd - 1_500L)
+                                if (isBeforeOpeningEnd) {
                                     val skipLabel = if (currentOpeningEnd < 120_000L) {
                                         "Sigla (${currentOpeningEnd / 1000}s)"
                                     } else {
@@ -729,8 +846,10 @@ fun VideoPlayerScreen(
                                         color = Color.White.copy(alpha = 0.10f),
                                         border = BorderStroke(1.dp, specularBorder),
                                         modifier = Modifier.iosSpringPress {
-                                            exoPlayer.seekTo(currentOpeningEnd)
-                                            currentPos = currentOpeningEnd
+                                            hasSkippedOpening = true
+                                            val target = (currentOpeningEnd + 1_000L).coerceAtMost(if (totalDuration > 0) totalDuration else Long.MAX_VALUE)
+                                            exoPlayer.seekTo(target)
+                                            currentPos = target
                                             skipFeedbackText = "Sigla Saltata"
                                             skipFeedbackIsForward = true
                                             skipFeedbackSeq++
@@ -757,26 +876,31 @@ fun VideoPlayerScreen(
                                     }
                                 }
 
-                                // Recap skip (4m 30s = 270s)
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = accentRed.copy(alpha = 0.18f),
-                                    border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f)),
-                                    modifier = Modifier.iosSpringPress {
-                                        val target = (exoPlayer.currentPosition + 270_000L).coerceAtMost(totalDuration)
-                                        exoPlayer.seekTo(target)
-                                        currentPos = target
-                                        skipFeedbackText = "Recap Saltato (+4m 30s)"
-                                        skipFeedbackIsForward = true
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                // Recap skip (4m 30s = 270s) - scompare automaticamente dopo i primi 5 minuti o una volta premuto
+                                val canShowRecapControls = !hasSkippedRecap && currentPos < 300_000L && (totalDuration == 0L || totalDuration > 300_000L)
+                                if (canShowRecapControls) {
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = accentRed.copy(alpha = 0.18f),
+                                        border = BorderStroke(1.dp, accentRed.copy(alpha = 0.50f)),
+                                        modifier = Modifier.iosSpringPress {
+                                            hasSkippedRecap = true
+                                            val target = (exoPlayer.currentPosition + 270_000L).coerceAtMost(if (totalDuration > 0) totalDuration else Long.MAX_VALUE)
+                                            exoPlayer.seekTo(target)
+                                            currentPos = target
+                                            skipFeedbackText = "Recap Saltato (+4m 30s)"
+                                            skipFeedbackIsForward = true
+                                            skipFeedbackSeq++
+                                        }
                                     ) {
-                                        Icon(Icons.Default.FastForward, contentDescription = null, tint = accentRed, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Recap (+4m 30s)", color = accentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.FastForward, contentDescription = null, tint = accentRed, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Recap (+4m 30s)", color = accentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
 
@@ -950,6 +1074,57 @@ fun VideoPlayerScreen(
                                         color = Color.White,
                                         fontSize = 11.sp,
                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text("Traccia Audio & Sottotitoli", color = Color.LightGray, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isItaDubbed = OnePieceHelper.isDubbedInItalian(episodeNumber)
+                        listOf(AudioLanguage.ITA, AudioLanguage.SUB_ITA).forEach { lang ->
+                            val isSel = lang == audioLanguage
+                            val isAvailable = lang != AudioLanguage.ITA || isItaDubbed
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSel) accentRed.copy(alpha = 0.85f) else Color.White.copy(alpha = if (isAvailable) 0.08f else 0.04f),
+                                border = BorderStroke(1.dp, if (isSel) Color.White.copy(alpha = 0.50f) else Color.White.copy(alpha = if (isAvailable) 0.15f else 0.06f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .iosSpringPress {
+                                        if (lang != audioLanguage) {
+                                            if (lang == AudioLanguage.ITA && !isItaDubbed) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Ep. $episodeNumber non ancora doppiato in ITA — Disponibile in SUB-ITA 🇯🇵",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } else {
+                                                val currentPos = exoPlayer.currentPosition
+                                                onLanguageChanged(lang, currentPos)
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(lang.flag, fontSize = 14.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        if (lang == AudioLanguage.ITA && !isItaDubbed) "ITA (Inedito)" else lang.shortLabel,
+                                        color = if (isAvailable) Color.White else Color.White.copy(alpha = 0.45f),
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 12.sp
                                     )
                                 }
                             }
@@ -1158,6 +1333,40 @@ fun VideoPlayerScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // FLUID IN-PLAYER LANGUAGE SWITCHING OVERLAY
+        AnimatedVisibility(
+            visible = isSwitchingLanguage,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(250)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xF0101018),
+                border = BorderStroke(1.dp, specularBorder),
+                shadowElevation = 16.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = accentRed,
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Cambio lingua in corso...",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

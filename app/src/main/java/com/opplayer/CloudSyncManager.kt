@@ -179,9 +179,9 @@ class CloudSyncManager(private val context: Context) {
             } else {
                 // Genera e persiste il vault di default basato sull'avanzamento dell'utente
                 val defaultVault = OnePieceHelper.exportToJson(
-                    watched = (1..539).toSet(),
+                    watched = (1..542).toSet(),
                     favorites = emptySet(),
-                    lastEp = 540,
+                    lastEp = 543,
                     lastPos = 0L,
                     streak = 8
                 )

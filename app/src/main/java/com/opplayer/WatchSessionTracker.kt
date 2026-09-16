@@ -39,10 +39,18 @@ class WatchSessionTracker(private val context: Context) {
     // === CICLO DI VITA DELLA SESSIONE ===
 
     fun startEpisode(episode: Int) {
-        // Se c'era una sessione aperta, chiudila
         val previous = _activeSession.value
-        if (previous != null && previous.episode != episode) {
-            endEpisode(markCompleted = false)
+        if (previous != null) {
+            if (previous.episode == episode) {
+                // Stesso episodio (es. cambio traccia audio/sub o ricarica video):
+                // Mantiene intatto il tempo già accumulato e riprende il timer attivo
+                if (previous.lastResumedAtMs == 0L) {
+                    previous.lastResumedAtMs = System.currentTimeMillis()
+                }
+                return
+            } else {
+                endEpisode(markCompleted = false)
+            }
         }
         val now = System.currentTimeMillis()
         _activeSession.value = WatchSession(

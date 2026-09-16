@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -33,6 +34,7 @@ fun DownloadTabContent(
     prefs: PlaybackPreferences,
     currentEpisodeNumber: Int,
     watchedEpisodes: Set<Int>,
+    audioLanguage: AudioLanguage = AudioLanguage.ITA,
     onPlayOfflineEpisode: (filePath: String, episodeNumber: Int) -> Unit,
     onOpenSettings: () -> Unit = {}
 ) {
@@ -43,13 +45,13 @@ fun DownloadTabContent(
     var completedDownloads by remember { mutableStateOf(emptyList<LocalEpisodeItem>()) }
     var isBatchDownloading by remember { mutableStateOf(false) }
 
-    // Polling periodico adattivo (1s con download attivi, 3s se idle per salvare batteria)
+    // Polling periodico adattivo (1s con download attivi, 5s se idle per massimo risparmio batteria)
     LaunchedEffect(Unit) {
-        while (true) {
+        while (isActive) {
             val active = downloadManagerHelper.getActiveDownloads()
             activeDownloads = active
             completedDownloads = downloadManagerHelper.getCompletedDownloads()
-            delay(if (active.isNotEmpty()) 1000L else 3000L)
+            delay(if (active.isNotEmpty()) 1000L else 5000L)
         }
     }
 
@@ -180,7 +182,7 @@ fun DownloadTabContent(
                                     ).show()
 
                                     for (ep in toDownload) {
-                                        downloadManagerHelper.startDownloadForEpisode(ep)
+                                        downloadManagerHelper.startDownloadForEpisode(ep, language = audioLanguage)
                                     }
                                     activeDownloads = downloadManagerHelper.getActiveDownloads()
                                     isBatchDownloading = false
@@ -417,6 +419,20 @@ fun DownloadTabContent(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
                                 )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                val isItaAvailable = OnePieceHelper.isDubbedInItalian(item.episodeNumber)
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isItaAvailable) Color(0x3532ADE6) else Color(0x35FF2A42)
+                                ) {
+                                    Text(
+                                        text = if (isItaAvailable) "🇮🇹 ITA" else "🇯🇵 SUB",
+                                        color = Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),

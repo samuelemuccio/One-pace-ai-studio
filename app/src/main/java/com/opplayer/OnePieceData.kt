@@ -40,9 +40,45 @@ data class BackupData(
     val bountyBeli: Long
 )
 
+enum class AudioLanguage(
+    val code: String,
+    val label: String,
+    val shortLabel: String,
+    val flag: String,
+    val pathSegment: String,
+    val episodeListUrl: String
+) {
+    ITA(
+        code = "ITA",
+        label = "Italiano",
+        shortLabel = "ITA",
+        flag = "🇮🇹",
+        pathSegment = "ita3",
+        episodeListUrl = "https://onepiecepower.com/anime18/onepiece/ita3/lista-episodi"
+    ),
+    SUB_ITA(
+        code = "SUB_ITA",
+        label = "Giapponese (SUB ITA)",
+        shortLabel = "SUB ITA",
+        flag = "🇯🇵",
+        pathSegment = "subita2",
+        episodeListUrl = "https://onepiecepower.com/anime18/onepiece/subita2/lista-episodi"
+    );
+
+    val opposite: AudioLanguage
+        get() = if (this == ITA) SUB_ITA else ITA
+}
+
 object OnePieceHelper {
 
     const val TOTAL_AIRING_EPISODES = 1176
+    // Ultimo episodio doppiato in italiano trasmesso da Mediaset Italia 2 (Saga del Paese di Wa)
+    // Gli episodi oltre questo numero vengono pubblicati progressivamente e sono disponibili in SUB-ITA
+    const val LAST_KNOWN_ITA_DUBBED_EPISODE = 932
+
+    fun isDubbedInItalian(episodeNumber: Int): Boolean {
+        return episodeNumber in 1..LAST_KNOWN_ITA_DUBBED_EPISODE
+    }
 
     val SAGAS = listOf(
         OnePieceSaga("East Blue Saga", 1..61, "Romance Dawn, Orange Town, Syrup Village, Baratie, Arlong Park, Loguetown", 0xFF34C759),
@@ -120,18 +156,49 @@ object OnePieceHelper {
         return match?.groupValues?.get(1)?.toIntOrNull() ?: 1
     }
 
-    fun buildEpisodeUrl(currentActiveUrl: String, targetEpisode: Int): String {
+    fun detectLanguage(url: String): AudioLanguage {
+        return if (url.contains("/subita") || url.contains("subita2")) AudioLanguage.SUB_ITA else AudioLanguage.ITA
+    }
+
+    fun buildEpisodeUrl(
+        currentActiveUrl: String = "",
+        targetEpisode: Int,
+        language: AudioLanguage? = null
+    ): String {
+        var targetLang = language ?: detectLanguage(currentActiveUrl)
+        // Se l'episodio richiesto supera quelli attualmente doppiati in italiano,
+        // reindirizza automaticamente ai sottotitoli in italiano per evitare errori 404
+        if (targetLang == AudioLanguage.ITA && targetEpisode > LAST_KNOWN_ITA_DUBBED_EPISODE) {
+            targetLang = AudioLanguage.SUB_ITA
+        }
+        val segment = targetLang.pathSegment
+
         val regex = Regex("""pagine/(\d+)""")
         val match = regex.find(currentActiveUrl)
-        return if (match != null) {
-            val len = match.groupValues[1].length
-            val formatted = targetEpisode.toString().padStart(len, '0')
-            currentActiveUrl.replace(regex, "pagine/$formatted")
-        } else {
-            val formatted = targetEpisode.toString().padStart(3, '0')
-            "https://onepiecepower.com/anime18/onepiece/ita3/pagine/$formatted"
+        val len = match?.groupValues?.get(1)?.length ?: 3
+        val padLen = maxOf(len, if (targetEpisode >= 1000) 4 else 3)
+        val formatted = targetEpisode.toString().padStart(padLen, '0')
+
+        if (currentActiveUrl.contains("onepiecepower.com")) {
+            val replacedLang = currentActiveUrl.replace(
+                Regex("""anime18/onepiece/(ita\d*|subita\d*)"""),
+                "anime18/onepiece/$segment"
+            )
+            return if (regex.containsMatchIn(replacedLang)) {
+                replacedLang.replace(regex, "pagine/$formatted")
+            } else {
+                "https://onepiecepower.com/anime18/onepiece/$segment/pagine/$formatted"
+            }
         }
+        return "https://onepiecepower.com/anime18/onepiece/$segment/pagine/$formatted"
     }
+
+    fun switchLanguageInUrl(currentUrl: String, newLanguage: AudioLanguage): String {
+        val ep = extractEpisodeNumber(currentUrl)
+        return buildEpisodeUrl(currentUrl, ep, newLanguage)
+    }
+
+    fun getEpisodeListUrl(language: AudioLanguage): String = language.episodeListUrl
 
     fun getStartDateMs(): Long {
         val cal = Calendar.getInstance()
@@ -238,7 +305,7 @@ object OnePieceHelper {
     fun importFromJson(jsonString: String): BackupData? {
         return try {
             val json = JSONObject(jsonString)
-            val lastEp = json.optInt("lastEpisode", 539)
+            val lastEp = json.optInt("lastEpisode", 543)
             val lastPos = json.optLong("lastPositionMs", 0L)
             val streak = json.optInt("dailyStreak", 8)
             val lastWatchDate = json.optString("lastWatchDate", "")

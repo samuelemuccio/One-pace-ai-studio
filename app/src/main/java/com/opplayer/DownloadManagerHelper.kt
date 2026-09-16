@@ -68,7 +68,8 @@ class DownloadManagerHelper(private val context: Context) {
     suspend fun startDownloadForEpisode(
         epNumber: Int,
         quality: String = "720p",
-        directUrl: String? = null
+        directUrl: String? = null,
+        language: AudioLanguage = AudioLanguage.ITA
     ): Result<Long> = withContext(Dispatchers.IO) {
         try {
             val dir = getMoviesDir() ?: return@withContext Result.failure(Exception("Cartella file non accessibile"))
@@ -78,8 +79,14 @@ class DownloadManagerHelper(private val context: Context) {
                 return@withContext Result.failure(Exception("Episodio $epNumber già scaricato! 💾"))
             }
 
+            val effectiveLang = if (language == AudioLanguage.ITA && epNumber > OnePieceHelper.LAST_KNOWN_ITA_DUBBED_EPISODE) {
+                AudioLanguage.SUB_ITA
+            } else {
+                language
+            }
+
             val resolvedUrl = directUrl ?: StreamExtractor.resolveStreamUrl(
-                OnePieceHelper.buildEpisodeUrl("", epNumber),
+                OnePieceHelper.buildEpisodeUrl("", epNumber, effectiveLang),
                 preferredQuality = quality
             )
             if (resolvedUrl.isNullOrBlank()) {

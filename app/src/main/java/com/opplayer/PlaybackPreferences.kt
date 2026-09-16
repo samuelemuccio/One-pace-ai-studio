@@ -20,7 +20,7 @@ class PlaybackPreferences(private val context: Context) {
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "op_streak_channel"
         const val NOTIFICATION_ID = 1001
-        const val CURRENT_DATA_VERSION = 3
+        const val CURRENT_DATA_VERSION = 4
     }
 
     init {
@@ -33,17 +33,24 @@ class PlaybackPreferences(private val context: Context) {
         if (currentVersion < CURRENT_DATA_VERSION) {
             val currentWatched = prefs.getStringSet("watched_set", null)
                 ?.mapNotNull { it.toIntOrNull() }?.toMutableSet() ?: mutableSetOf()
-            currentWatched.addAll(1..539)
+            // L'utente è arrivato all'episodio 542
+            currentWatched.addAll(1..542)
 
-            val currentLast = prefs.getInt("last_episode", 539)
-            val newLast = if (currentLast <= 539) 540 else currentLast
+            val currentLast = prefs.getInt("last_episode", 542)
+            val newLast = if (currentLast <= 542) 543 else currentLast
+
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+            val yesterdayStr = SimpleDateFormat("yyyy-MM-dd", Locale.ITALY).format(cal.time)
+
+            val existingStreak = prefs.getInt("daily_streak", 8).coerceAtLeast(8)
 
             prefs.edit()
                 .putInt("user_backup_version", CURRENT_DATA_VERSION)
                 .putInt("last_episode", newLast)
                 .putLong("last_position_ms", 0L)
-                .putInt("daily_streak", 8)
-                .putString("last_watch_date", "")
+                .putInt("daily_streak", existingStreak)
+                .putString("last_watch_date", yesterdayStr)
                 .putLong("bounty_beli", 0L)
                 .putStringSet("watched_set", currentWatched.map { it.toString() }.toSet())
                 .putString("last_url", "https://onepiecepower.net/episodio-$newLast")
@@ -55,10 +62,12 @@ class PlaybackPreferences(private val context: Context) {
         prefs.edit().putInt("last_episode", episodeNumber).apply()
     }
 
-    fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long) {
+    fun saveLastPlayback(url: String, episodeNumber: Int, positionMs: Long, language: AudioLanguage? = null) {
+        val detectedLang = language ?: OnePieceHelper.detectLanguage(url)
         val editor = prefs.edit()
             .putString("last_url", url)
             .putInt("last_episode", episodeNumber)
+            .putString("audio_language", detectedLang.name)
             .putLong("ep_last_seen_$episodeNumber", System.currentTimeMillis())
 
         if (positionMs > 0L) {
@@ -67,6 +76,19 @@ class PlaybackPreferences(private val context: Context) {
         }
         editor.apply()
         recordWatchForStreak()
+    }
+
+    fun getAudioLanguage(): AudioLanguage {
+        val raw = prefs.getString("audio_language", AudioLanguage.ITA.name) ?: AudioLanguage.ITA.name
+        return try {
+            AudioLanguage.valueOf(raw)
+        } catch (_: Exception) {
+            AudioLanguage.ITA
+        }
+    }
+
+    fun setAudioLanguage(lang: AudioLanguage) {
+        prefs.edit().putString("audio_language", lang.name).apply()
     }
 
     fun saveEpisodePosition(episodeNumber: Int, positionMs: Long) {
@@ -85,7 +107,7 @@ class PlaybackPreferences(private val context: Context) {
     }
 
     fun getLastUrl(): String? = prefs.getString("last_url", null)
-    fun getLastEpisode(): Int = prefs.getInt("last_episode", 540)
+    fun getLastEpisode(): Int = prefs.getInt("last_episode", 543)
     fun getLastPositionMs(): Long = prefs.getLong("last_position_ms", 0L)
     fun getEpisodePositionMs(episodeNumber: Int): Long = prefs.getLong("ep_pos_$episodeNumber", 0L)
 
@@ -153,7 +175,7 @@ class PlaybackPreferences(private val context: Context) {
     fun getWatchedEpisodes(): Set<Int> {
         val raw = prefs.getStringSet("watched_set", null)
         return if (raw == null) {
-            val initSet = (1..539).toSet()
+            val initSet = (1..542).toSet()
             prefs.edit().putStringSet("watched_set", initSet.map { it.toString() }.toSet()).apply()
             initSet
         } else {
@@ -172,9 +194,9 @@ class PlaybackPreferences(private val context: Context) {
         val todayStr = sdf.format(Date())
         val lastDateStr = getLastWatchDate()
 
-        var currentStreak = getStreak()
+        val currentStreak = getStreak().coerceAtLeast(8)
         if (lastDateStr == todayStr) {
-            // Already recorded today, streak maintained
+            // Già registrato oggi, la streak è confermata
             return currentStreak
         }
 
@@ -182,19 +204,21 @@ class PlaybackPreferences(private val context: Context) {
         cal.add(Calendar.DAY_OF_YEAR, -1)
         val yesterdayStr = sdf.format(cal.time)
 
-        currentStreak = if (lastDateStr == yesterdayStr) {
+        // Se era ieri, se è il primo giorno, o se l'utente ha la sua serie pirata attiva (>= 8),
+        // incrementiamo con successo senza mai azzerare la streak a 1!
+        val newStreak = if (lastDateStr == yesterdayStr || lastDateStr.isEmpty() || currentStreak >= 8) {
             currentStreak + 1
         } else {
             1
         }
 
         prefs.edit()
-            .putInt("daily_streak", currentStreak)
+            .putInt("daily_streak", newStreak)
             .putString("last_watch_date", todayStr)
             .apply()
 
-        notifyStreakMilestone(currentStreak)
-        return currentStreak
+        notifyStreakMilestone(newStreak)
+        return newStreak
     }
 
     fun saveDailyStreak(streak: Int, lastWatchDate: String) {
